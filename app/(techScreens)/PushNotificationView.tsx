@@ -124,6 +124,45 @@ function PushNotificationView() {
     }
   };
 
+  const registerWithAdobe = async () => {
+    try {
+      const success = await pushNotificationService.registerCurrentTokenWithAdobe();
+      if (success) {
+        setLog(prev => prev + '\nToken registered with Adobe services successfully');
+        Alert.alert('Success', 'Token registered with Adobe services!');
+      } else {
+        setLog(prev => prev + '\nFailed to register token with Adobe services');
+        Alert.alert(
+          'Adobe Registration Failed', 
+          'Failed to register token with Adobe services. Make sure you have configured the Adobe App ID in the App ID Configuration screen first.'
+        );
+      }
+    } catch (error) {
+      console.error('Error registering with Adobe:', error);
+      setLog(prev => prev + '\nError registering with Adobe: ' + error);
+    }
+  };
+
+  const clearAdobePushTokens = async () => {
+    try {
+      const success = await pushNotificationService.clearAdobePushTokens();
+      if (success) {
+        setLog(prev => prev + '\nAdobe push tokens cleared successfully');
+        Alert.alert(
+          'Success', 
+          'Adobe push tokens cleared! This will fix token mismatch issues. Restart the app and reconfigure everything for best results.'
+        );
+      } else {
+        setLog(prev => prev + '\nFailed to clear Adobe push tokens');
+        Alert.alert('Error', 'Failed to clear Adobe push tokens');
+      }
+    } catch (error) {
+      console.error('Error clearing Adobe push tokens:', error);
+      setLog(prev => prev + '\nError clearing Adobe push tokens: ' + error);
+    }
+  };
+
+
   return (
     <ThemedView style={styles.container}>
       <ScrollView contentContainerStyle={{marginTop: 75}}>
@@ -131,10 +170,10 @@ function PushNotificationView() {
         <ThemedText style={styles.welcome}>Push Notifications</ThemedText>
         
         <ThemedText style={{ marginTop: 16, color: theme.colors.text, fontSize: 16, fontWeight: 'bold' }}>
-          {Platform.OS === 'ios' ? 'Push Notification Setup (iOS)' : 'Local Notification Setup (Android)'}
+          {Platform.OS === 'ios' ? 'Push Notification Setup (iOS)' : 'FCM Push Notification Setup (Android)'}
         </ThemedText>
-        <Button title={Platform.OS === 'ios' ? 'Register for Push Notifications' : 'Register for Local Notifications'} onPress={registerForNotifications} />
-        <Button title={Platform.OS === 'ios' ? 'Get Push Token' : 'Get Current Token (Mock)'} onPress={getCurrentToken} />
+        <Button title={Platform.OS === 'ios' ? 'Register for Push Notifications' : 'Register for FCM Push Notifications'} onPress={registerForNotifications} />
+        <Button title={Platform.OS === 'ios' ? 'Get Push Token' : 'Get FCM Token'} onPress={getCurrentToken} />
         
         <ThemedText style={{ marginTop: 24, color: theme.colors.text, fontSize: 16, fontWeight: 'bold' }}>
           Test Notifications
@@ -148,9 +187,23 @@ function PushNotificationView() {
         <Button title="Get Scheduled Notifications" onPress={getScheduledNotifications} />
         <Button title="Cancel All Notifications" onPress={cancelAllNotifications} />
         
+        <ThemedText style={{ marginTop: 24, color: theme.colors.text, fontSize: 16, fontWeight: 'bold' }}>
+          Adobe Services Integration
+        </ThemedText>
+        <ThemedText style={{ marginTop: 8, color: theme.colors.text, fontSize: 12, fontStyle: 'italic' }}>
+          Note: Adobe App ID must be configured first in the App ID Configuration screen
+        </ThemedText>
+        <Button title="Register Token with Adobe Services" onPress={registerWithAdobe} />
+        <Button title="Clear Adobe Push Tokens (Fix Mismatch)" onPress={clearAdobePushTokens} color="#ff6b6b" />
+        
         {pushToken && (
           <ThemedText style={{ marginTop: 16, color: theme.colors.text, fontSize: 14, textAlign: 'center' }}>
-            Push Token: {pushToken.substring(0, 20)}...
+            {Platform.OS === 'ios' ? 'Expo Push Token' : 'FCM Token'}: {pushToken.substring(0, 20)}...
+            {Platform.OS === 'android' && (
+              <ThemedText style={{ color: pushToken.startsWith('Mock') ? '#ff6b6b' : '#51cf66', fontSize: 12 }}>
+                {'\n'}({pushToken.startsWith('Mock') ? 'Mock Token' : 'Real FCM Token'})
+              </ThemedText>
+            )}
           </ThemedText>
         )}
         

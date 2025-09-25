@@ -1,6 +1,10 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
+import messaging from '@react-native-firebase/messaging';
+import { Messaging } from '@adobe/react-native-aepmessaging';
+import { MobileCore } from '@adobe/react-native-aepcore';
+import { getStoredAppId } from './adobeConfig';
 
 // Configure how notifications are handled when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -70,13 +74,34 @@ export class PushNotificationService {
           token = expoTokenResponse.data;
           console.log('iOS Expo push token:', token);
         } else {
-          // Android: Use mock token (Firebase required for real tokens)
-          console.log('Android: Using mock token (Firebase required for real push tokens)');
-          token = `AndroidMockToken_${Date.now()}`;
+          // Android: Get real FCM token
+          console.log('Android: Getting FCM token...');
+          
+          // Request FCM permission
+          const authStatus = await messaging().requestPermission();
+          const enabled = authStatus === messaging.AuthorizationStatus.AUTHORIZED || 
+                         authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+          
+          if (!enabled) {
+            console.log('FCM permission not granted, falling back to mock token');
+            token = `AndroidMockToken_${Date.now()}`;
+          } else {
+            // Get FCM token
+            const fcmToken = await messaging().getToken();
+            token = fcmToken;
+            console.log('Android FCM token generated:', token);
+          }
         }
         
         this.expoPushToken = token;
         console.log('Successfully registered for notifications');
+        
+        // Set up FCM message handling for Android
+        if (Platform.OS === 'android' && token && !token.startsWith('Mock')) {
+          this.setupFCMMessageHandling();
+        }
+        
+        // Note: Adobe registration is now handled manually via "Register Token with Adobe Messaging" button
       } catch (error) {
         console.error('Error getting push token:', error);
         // Fallback to mock token
@@ -146,6 +171,231 @@ export class PushNotificationService {
    */
   async getScheduledNotifications() {
     return await Notifications.getAllScheduledNotificationsAsync();
+  }
+
+  /**
+   * Test FCM token generation (Android only)
+   */
+  async testFCMTokenGeneration(): Promise<string | null> {
+    if (Platform.OS !== 'android') {
+      console.log('FCM test only available on Android');
+      return null;
+    }
+
+    try {
+      console.log('Testing FCM token generation...');
+      
+      // Request permission for FCM
+      const authStatus = await messaging().requestPermission();
+      const enabled = authStatus === messaging.AuthorizationStatus.AUTHORIZED || 
+                     authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      
+      if (!enabled) {
+        console.log('FCM permission not granted');
+        return null;
+      }
+
+      // Get FCM token
+      const fcmToken = await messaging().getToken();
+      console.log('FCM token generated successfully:', fcmToken);
+      
+      return fcmToken;
+    } catch (error) {
+      console.error('Error generating FCM token:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Register push token with Adobe Messaging (both new and legacy APIs for full compatibility)
+   */
+  private async registerTokenWithAdobe(token: string): Promise<void> {
+    try {
+      console.log('Registering push token with Adobe Messaging:', token.substring(0, 20) + '...');
+      
+      // Check if Adobe SDK is initialized with App ID
+      const appId = await getStoredAppId();
+      if (!appId) {
+        console.log('Adobe SDK not initialized - App ID not found. Skipping Adobe token registration.');
+        console.log('Please configure Adobe App ID in the App ID Configuration screen first.');
+        return;
+      }
+      
+      console.log('Adobe SDK initialized with App ID:', appId);
+      
+      // Register with MobileCore API (for Adobe services and Assurance compatibility)
+      try {
+        await MobileCore.setPushIdentifier(token);
+        console.log('✅ Successfully registered with MobileCore (Adobe services and Assurance compatibility)');
+      } catch (error) {
+        console.error('Error registering with MobileCore:', error);
+      }
+      
+      console.log('Push token registered with Adobe services successfully');
+    } catch (error) {
+      console.error('Error registering token with Adobe:', error);
+      // Don't throw - this shouldn't break the main flow
+    }
+  }
+
+  /**
+   * Check if an FCM message is from Adobe Messaging
+   */
+  private isAdobeMessage(remoteMessage: any): boolean {
+    // Adobe messages typically have specific data fields or come from Adobe's FCM sender
+    const data = remoteMessage.data || {};
+    
+    // Check for Adobe-specific identifiers
+    return (
+      data.adobe_message_id !== undefined ||
+      data.adobe_campaign_id !== undefined ||
+      data.adobe_journey_id !== undefined ||
+      data.adobe_offer_id !== undefined ||
+      data.adb_n_priority !== undefined ||  // Adobe Assurance messages
+      data.adb_n_visibility !== undefined || // Adobe Assurance messages
+      data.adb_uri !== undefined || // Adobe Assurance messages
+      remoteMessage.from?.includes('adobe') ||
+      remoteMessage.from?.includes('journey') ||
+      remoteMessage.from?.includes('campaign')
+    );
+  }
+
+  /**
+   * Set up FCM message handling for the app
+   */
+  private setupFCMMessageHandling(): void {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    try {
+      console.log('Setting up FCM message handling...');
+      
+      // Set up foreground message listener
+      const unsubscribe = messaging().onMessage(async remoteMessage => {
+        console.log('FCM message received in foreground:', remoteMessage);
+        
+        // Check if this is an Adobe message
+        if (this.isAdobeMessage(remoteMessage)) {
+          console.log('Adobe message detected, routing through Adobe Messaging');
+          
+          // Show real campaign content for all Adobe messages (AJO campaigns, Assurance, etc.)
+          const data = remoteMessage.data || {};
+          const title = String(data.adb_title || remoteMessage.notification?.title || 'Adobe Campaign');
+          const body = String(data.adb_body || remoteMessage.notification?.body || 'You have a new message');
+          
+          console.log('Showing real Adobe campaign content:', { title, body });
+          await this.scheduleLocalNotification(
+            title,
+            body,
+            JSON.stringify(remoteMessage.data || {})
+          );
+        } else {
+          // Show local notification for non-Adobe messages
+          if (remoteMessage.notification) {
+            await this.scheduleLocalNotification(
+              String(remoteMessage.notification.title || 'Push Notification'),
+              String(remoteMessage.notification.body || 'You have a new message'),
+              JSON.stringify(remoteMessage.data || {})
+            );
+          } else if (remoteMessage.data) {
+            // Handle data-only messages
+            await this.scheduleLocalNotification(
+              'Push Notification',
+              'You have a new message',
+              JSON.stringify(remoteMessage.data || {})
+            );
+          }
+        }
+      });
+
+      // Set up background message handler
+      messaging().setBackgroundMessageHandler(async remoteMessage => {
+        console.log('FCM message handled in background:', remoteMessage);
+        // Background messages are handled automatically by FCM
+      });
+
+      console.log('FCM message handlers set up successfully');
+    } catch (error) {
+      console.error('Error setting up FCM message handling:', error);
+    }
+  }
+
+  /**
+   * Test FCM message handling
+   */
+  async testFCMMessageHandling(): Promise<boolean> {
+    if (Platform.OS !== 'android') {
+      console.log('FCM test only available on Android');
+      return false;
+    }
+
+    try {
+      console.log('Testing FCM message handling...');
+      this.setupFCMMessageHandling();
+      console.log('FCM message handlers set up successfully');
+      return true;
+    } catch (error) {
+      console.error('Error setting up FCM message handling:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Manually register current token with Adobe Messaging (for testing)
+   */
+  async registerCurrentTokenWithAdobe(): Promise<boolean> {
+    const token = this.getExpoPushToken();
+    if (!token || token.startsWith('Mock')) {
+      console.log('No valid push token available for Adobe registration');
+      return false;
+    }
+
+    // Check if Adobe is initialized first
+    const appId = await getStoredAppId();
+    if (!appId) {
+      console.log('Adobe SDK not initialized - App ID not found');
+      return false;
+    }
+
+    try {
+      await this.registerTokenWithAdobe(token);
+      return true;
+    } catch (error) {
+      console.error('Error registering current token with Adobe:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Clear push tokens from Adobe and reset profile (for fixing token mismatches)
+   */
+  async clearAdobePushTokens(): Promise<boolean> {
+    try {
+      console.log('Clearing push tokens from Adobe...');
+      
+      // Clear push identifier from MobileCore
+      try {
+        await MobileCore.setPushIdentifier('');
+        console.log('✅ Cleared push identifier from MobileCore');
+      } catch (error) {
+        console.error('Error clearing from MobileCore:', error);
+      }
+      
+      // Reset identities to clear ECID and profile data
+      try {
+        MobileCore.resetIdentities();
+        console.log('✅ Reset MobileCore identities (cleared ECID and profile)');
+      } catch (error) {
+        console.error('Error resetting identities:', error);
+      }
+      
+      console.log('Push tokens cleared from Adobe successfully');
+      return true;
+    } catch (error) {
+      console.error('Error clearing Adobe push tokens:', error);
+      return false;
+    }
   }
 }
 

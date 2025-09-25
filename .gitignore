@@ -52,4 +52,6 @@ Thumbs.db
 
 *.AuthKey_*.p8
 
-adobe-ea-bootcamp-firebase-adminsdk-fbsvc-9425223e26.json
+*adobe-ea-bootcamp-firebase*
+
+*Push_Notification_Admin*

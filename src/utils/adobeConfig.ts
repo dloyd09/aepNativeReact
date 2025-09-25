@@ -75,21 +75,16 @@ export const configureAdobe = async (appId: string) => {
     console.log('Initializing MobileCore with App ID:', appId);
     await MobileCore.initializeWithAppId(appId);
     
-    // Apply Messaging configuration
+    // Apply minimal configuration - let Launch property handle all messaging configuration
     try {
-      const messagingConfig: any = {
-        'messaging.eventDataset': '6838c051f861982aef2661be'
-      };
+      const minimalConfig: any = {};
 
-      if (Platform.OS === 'ios') {
-        messagingConfig['messaging.useSandbox'] = true;
-      }
-
-      console.log('Applying Messaging configuration:', messagingConfig);
-      await MobileCore.updateConfiguration(messagingConfig);
-      console.log('Messaging configuration applied successfully');
+      console.log('Applying minimal Adobe configuration:', minimalConfig);
+      await MobileCore.updateConfiguration(minimalConfig);
+      console.log('Adobe configuration applied successfully');
+      console.log('Note: Edge Configuration ID should come from Launch property automatically');
     } catch (error) {
-      console.error('Error applying Messaging configuration:', error);
+      console.error('Error applying Adobe configuration:', error);
     }
     
     // Wait a moment for initialization to complete
@@ -135,5 +130,87 @@ export const configureAdobe = async (appId: string) => {
   } catch (error) {
     console.error('Error configuring Adobe SDK:', error);
     throw error;
+  }
+};
+
+/**
+ * Debug function to check current Adobe configuration
+ */
+export const debugAdobeConfiguration = async (): Promise<string> => {
+  try {
+    let debugInfo = '=== Adobe Configuration Debug ===\n\n';
+    
+    // Check if App ID is configured
+    const appId = await getStoredAppId();
+    debugInfo += `App ID: ${appId || 'NOT CONFIGURED'}\n`;
+    
+    if (!appId) {
+      debugInfo += '\n❌ App ID not configured - this is required for all Adobe services\n';
+      return debugInfo;
+    }
+    
+    // Check extension versions
+    try {
+      const coreVersion = await MobileCore.extensionVersion();
+      debugInfo += `MobileCore version: ${coreVersion}\n`;
+      
+      const edgeVersion = await Edge.extensionVersion();
+      debugInfo += `Edge version: ${edgeVersion}\n`;
+      
+      const identityVersion = await Identity.extensionVersion();
+      debugInfo += `Edge Identity version: ${identityVersion}\n`;
+      
+      const optimizeVersion = await Optimize.extensionVersion();
+      debugInfo += `Optimize version: ${optimizeVersion}\n`;
+      
+      const messagingVersion = await Messaging.extensionVersion();
+      debugInfo += `Messaging version: ${messagingVersion}\n`;
+      
+    } catch (error) {
+      debugInfo += `Error getting extension versions: ${error}\n`;
+    }
+    
+    // Check ECID
+    try {
+      const ecid = await Identity.getExperienceCloudId();
+      debugInfo += `ECID: ${ecid || 'NOT AVAILABLE'}\n`;
+    } catch (error) {
+      debugInfo += `Error getting ECID: ${error}\n`;
+    }
+    
+    // Check Edge location hint
+    try {
+      const locationHint = await Edge.getLocationHint();
+      debugInfo += `Edge Location Hint: ${locationHint || 'NOT AVAILABLE'}\n`;
+    } catch (error) {
+      debugInfo += `Error getting Edge location hint: ${error}\n`;
+    }
+    
+    // Check current configuration
+    try {
+      const config = await MobileCore.getSdkIdentities();
+      debugInfo += `Current Configuration: ${JSON.stringify(config, null, 2)}\n`;
+    } catch (error) {
+      debugInfo += `Error getting current configuration: ${error}\n`;
+    }
+    
+    debugInfo += '\n=== Sandbox Configuration Notes ===\n';
+    debugInfo += 'The "Sandbox: unknown" issue in Assurance typically means:\n';
+    debugInfo += '1. Launch property is not configured with Edge Configuration ID\n';
+    debugInfo += '2. Edge Configuration ID is not pointing to the correct sandbox\n';
+    debugInfo += '3. Events are not reaching Adobe Experience Platform\n\n';
+    debugInfo += '=== Bootcamp User Instructions ===\n';
+    debugInfo += 'For bootcamp users to fix this:\n';
+    debugInfo += '1. Go to Adobe Experience Platform Data Collection\n';
+    debugInfo += '2. Open your Launch property (matching the App ID above)\n';
+    debugInfo += '3. Ensure Edge Configuration ID is configured in the property\n';
+    debugInfo += '4. Save and publish the Launch property\n';
+    debugInfo += '5. Restart the app to pick up the new configuration\n\n';
+    debugInfo += 'The Edge Configuration ID should be automatically provided by the Launch property.\n';
+    debugInfo += 'If it\'s missing, the Launch property needs to be configured properly.\n';
+    
+    return debugInfo;
+  } catch (error) {
+    return `Error in debug function: ${error}`;
   }
 }; 
