@@ -1,13 +1,16 @@
 import productsData from '../../productData/bootcamp_products.json';
 import { Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import React, { useCallback } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { ThemedView } from '../../../components/ThemedView';
 import { ThemedText } from '../../../components/ThemedText';
 import { View, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
 import { useTheme, useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { MobileCore } from '@adobe/react-native-aepcore';
+import { Edge } from '@adobe/react-native-aepedge';
+import { Identity } from '@adobe/react-native-aepedgeidentity';
+import { buildPageViewEvent } from '../../../src/utils/xdmEventBuilders';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const PRODUCT_ICONS: { [key: string]: any } = {
   // Family
@@ -127,21 +130,68 @@ export default function CategoryProductList() {
   const { colors } = useTheme();
   const navigation = useNavigation();
 
+  const [identityMap, setIdentityMap] = useState({});
+
   // Filter products by category
   const products = productsData.filter(product => product.product.categories.primary.toLowerCase() === category?.toLowerCase());
 
+  // Initialize identityMap on component mount
+  useEffect(() => {
+    Identity.getIdentities().then((result) => {
+      if (result && result.identityMap) {
+        setIdentityMap(result.identityMap);
+      } else {
+        setIdentityMap(result);
+      }
+    });
+  }, []);
+
+  // Send page view when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      const pageName = category ? category.charAt(0).toUpperCase() + category.slice(1) + ' Category' : 'Category';
-      MobileCore.trackAction('pageView', {
-        'page.name': pageName,
-        'page.category': 'Consumer',
-        'page.type': 'Category View',
-        'user.journey': 'Navigation',
-        'category.name': category,
-        'product.count': products.length,
-      });
-    }, [category, products.length])
+      const handleFocus = async () => {
+        // Check if identityMap is ready
+        if (!identityMap || Object.keys(identityMap).length === 0) {
+          console.log('Category - IdentityMap not ready, skipping page view');
+          return;
+        }
+
+        // Get fresh profile from AsyncStorage
+        let currentProfile = { firstName: '', email: '' };
+        try {
+          const storedProfile = await AsyncStorage.getItem('userProfile');
+          if (storedProfile) {
+            currentProfile = JSON.parse(storedProfile);
+          }
+        } catch (error) {
+          console.error('Failed to read profile:', error);
+        }
+
+        const pageName = category ? category.charAt(0).toUpperCase() + category.slice(1) + ' Category' : 'Category';
+
+        // Send page view
+        try {
+          const pageViewEvent = await buildPageViewEvent({
+            identityMap,
+            profile: currentProfile,
+            pageTitle: pageName,
+            pagePath: `/home/${category}`,
+            pageType: 'category',
+            siteSection2: 'Shopping',
+            siteSection3: category || 'Unknown'
+          });
+
+          console.log(`📤 Sending ${category} category page view event`);
+          await Edge.sendEvent(pageViewEvent);
+          
+          console.log(`✅ Category page view sent: ${category} (${products.length} products)`);
+        } catch (error) {
+          console.error('❌ Error sending category page view:', error);
+        }
+      };
+
+      handleFocus();
+    }, [category, identityMap, products.length])
   );
 
   const handleProductPress = (productName: string) => {

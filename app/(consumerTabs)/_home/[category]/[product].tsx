@@ -24,14 +24,18 @@ export const options = {
   tabBarButton: () => null,
 };
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { ThemedView } from '../../../../components/ThemedView';
 import { ThemedText } from '../../../../components/ThemedText';
 import { View, StyleSheet, TouchableOpacity, Alert, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { MobileCore } from '@adobe/react-native-aepcore';
+import { Edge } from '@adobe/react-native-aepedge';
+import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { useTheme, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useCart } from '../../../../components/CartContext';
+import { useCartSession } from '../../../../hooks/useCartSession';
+import { buildProductViewEvent, buildProductListAddEvent } from '../../../../src/utils/xdmEventBuilders';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 const PRODUCT_ICONS: { [key: string]: any } = {
@@ -83,6 +87,9 @@ export default function ProductDetail() {
   const { colors } = useTheme();
   const { addToCart, isInCart } = useCart();
   const navigation = useNavigation();
+  const { cartSessionId, isLoading: isCartSessionLoading } = useCartSession();
+
+  const [identityMap, setIdentityMap] = useState({});
 
   // Find the product in the JSON data
   const productData = (productsData as Product[]).find(
@@ -91,21 +98,69 @@ export default function ProductDetail() {
 
   const productSku = productData?.sku;
 
+  // Initialize identityMap on component mount
+  useEffect(() => {
+    Identity.getIdentities().then((result) => {
+      if (result && result.identityMap) {
+        setIdentityMap(result.identityMap);
+      } else {
+        setIdentityMap(result);
+      }
+    });
+  }, []);
+
+  // Send product view when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      if (productData) {
-        MobileCore.trackAction('pageView', {
-          'page.name': 'Product Detail',
-          'page.category': 'Consumer',
-          'page.type': 'Product View',
-          'user.journey': 'Navigation',
-          'product.name': productData.product.name,
-          'product.category': category,
-          'product.price': productData.product.price,
-          'product.sku': productSku,
-        });
-      }
-    }, [productData, category, productSku])
+      const handleFocus = async () => {
+        if (!productData) return;
+
+        // Check if identityMap is ready
+        if (!identityMap || Object.keys(identityMap).length === 0) {
+          console.log('Product Detail - IdentityMap not ready, skipping product view');
+          return;
+        }
+
+        // Get fresh profile from AsyncStorage
+        let currentProfile = { firstName: '', email: '' };
+        try {
+          const storedProfile = await AsyncStorage.getItem('userProfile');
+          if (storedProfile) {
+            currentProfile = JSON.parse(storedProfile);
+          }
+        } catch (error) {
+          console.error('Failed to read profile:', error);
+        }
+
+        // Send product view event
+        try {
+          const productViewEvent = await buildProductViewEvent({
+            identityMap,
+            profile: currentProfile,
+            product: {
+              sku: productSku || '',
+              name: productData.product.name,
+              price: productData.product.price,
+              category: category
+            }
+          });
+
+          console.log('📤 Sending product view event:', productData.product.name);
+          await Edge.sendEvent(productViewEvent);
+          
+          console.log('✅ Product view sent successfully:', {
+            name: productData.product.name,
+            sku: productSku,
+            price: productData.product.price,
+            category
+          });
+        } catch (error) {
+          console.error('❌ Error sending product view:', error);
+        }
+      };
+
+      handleFocus();
+    }, [productData, category, productSku, identityMap])
   );
 
   //console.log({ category, product, productData });
@@ -126,7 +181,8 @@ export default function ProductDetail() {
     return null;
   }
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async () => {
+    // Add to cart context
     addToCart({
       category: category ?? '',
       name: productData.product.name,
@@ -135,13 +191,56 @@ export default function ProductDetail() {
       sku: productSku,
       image: productData.product.image,
     });
-    // Analytics tracking for add to cart
-    MobileCore.trackAction('addToCart', {
-      'product.name': productData.product.name,
-      'product.category': category,
-      'product.price': productData.product.price,
-      'cart.action': 'add',
-    });
+
+    // Check prerequisites for analytics
+    if (isCartSessionLoading || !cartSessionId) {
+      console.log('Cart session not ready, skipping add to cart event');
+      return;
+    }
+
+    if (!identityMap || Object.keys(identityMap).length === 0) {
+      console.log('IdentityMap not ready, skipping add to cart event');
+      return;
+    }
+
+    // Get fresh profile from AsyncStorage
+    let currentProfile = { firstName: '', email: '' };
+    try {
+      const storedProfile = await AsyncStorage.getItem('userProfile');
+      if (storedProfile) {
+        currentProfile = JSON.parse(storedProfile);
+      }
+    } catch (error) {
+      console.error('Failed to read profile:', error);
+    }
+
+    // Send product list add event
+    try {
+      const productListAddEvent = await buildProductListAddEvent({
+        identityMap,
+        profile: currentProfile,
+        product: {
+          sku: productSku || '',
+          name: productData.product.name,
+          price: productData.product.price,
+          category: category,
+          quantity: 1
+        },
+        cartSessionId
+      });
+
+      console.log('📤 Sending add to cart event:', productData.product.name);
+      await Edge.sendEvent(productListAddEvent);
+      
+      console.log('✅ Add to cart event sent successfully:', {
+        name: productData.product.name,
+        sku: productSku,
+        price: productData.product.price,
+        cartSessionId
+      });
+    } catch (error) {
+      console.error('❌ Error sending add to cart event:', error);
+    }
   };
 
   const added = isInCart(productData.product.name, category ?? '');

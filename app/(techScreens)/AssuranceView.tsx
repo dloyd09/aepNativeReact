@@ -100,25 +100,13 @@ const AssuranceView = () => {
           console.log('Assurance version:', version);
         }
 
-        // Then load saved session URL
+        // Then load saved session URL (but don't auto-reconnect)
         const savedURL = await AsyncStorage.getItem(ASSURANCE_URL_KEY);
         if (savedURL && isMounted) {
           setSessionURL(savedURL);
-          // Try to reconnect to existing session
-          try {
-            console.log('Attempting to reconnect to existing session:', savedURL);
-            await Assurance.startSession(savedURL);
-            const newVersion = await Assurance.extensionVersion();
-            console.log('Assurance version after reconnect:', newVersion);
-            setIsSessionActive(true);
-            
-            // Check real connection status
-            await checkRealConnectionStatus();
-          } catch (error) {
-            console.error('Error reconnecting to session:', error);
-            setIsSessionActive(false);
-            setRealConnectionStatus('Connection Failed');
-          }
+          console.log('Loaded saved Assurance URL (not auto-connecting):', savedURL);
+          // Note: Not auto-connecting because Assurance sessions expire
+          // User must manually tap "Start Session" to reconnect
         }
       } catch (error) {
         console.error('Error during Assurance initialization:', error);
@@ -132,6 +120,13 @@ const AssuranceView = () => {
 
   const startSessionClicked = async () => {
     try {
+      // Check if App ID is configured first
+      const appId = await getStoredAppId();
+      if (!appId) {
+        Alert.alert('App ID Required', 'Please configure your Adobe App ID first in the "App ID Configuration" screen before starting an Assurance session.');
+        return;
+      }
+
       if (!sessionURL.trim()) {
         Alert.alert('Error', 'Please enter a valid Assurance session URL');
         return;
@@ -149,8 +144,52 @@ const AssuranceView = () => {
       await AsyncStorage.setItem(ASSURANCE_URL_KEY, trimmedURL);
       
       // Start the Assurance session
-      console.log('Starting Assurance session with URL:', trimmedURL);
-      await Assurance.startSession(trimmedURL);
+      console.log('========================================');
+      console.log('=== ASSURANCE SESSION DEBUG START ===');
+      console.log('========================================');
+      console.log('Input URL (full):', trimmedURL);
+      
+      // Extract session ID from URL for comparison
+      const sessionIdMatch = trimmedURL.match(/adb_validation_sessionid=([a-f0-9-]+)/);
+      const inputSessionId = sessionIdMatch ? sessionIdMatch[1] : 'NOT_FOUND';
+      console.log('Input Session ID:', inputSessionId);
+      
+      // Check what's actually saved in AsyncStorage
+      try {
+        const savedURL = await AsyncStorage.getItem(ASSURANCE_URL_KEY);
+        console.log('AsyncStorage saved URL:', savedURL);
+        if (savedURL) {
+          const savedSessionIdMatch = savedURL.match(/adb_validation_sessionid=([a-f0-9-]+)/);
+          const savedSessionId = savedSessionIdMatch ? savedSessionIdMatch[1] : 'NOT_FOUND';
+          console.log('AsyncStorage Session ID:', savedSessionId);
+          console.log('Session IDs match?', inputSessionId === savedSessionId);
+        } else {
+          console.log('No saved URL in AsyncStorage');
+        }
+      } catch (e) {
+        console.error('Error checking AsyncStorage:', e);
+      }
+      
+      console.log('Calling Assurance.startSession() with URL:', trimmedURL);
+      
+      try {
+        await Assurance.startSession(trimmedURL);
+        console.log('✅ Assurance.startSession() called successfully');
+        console.log('Expected to connect to session ID:', inputSessionId);
+        console.log('========================================');
+        console.log('=== ASSURANCE SESSION DEBUG END ===');
+        console.log('========================================');
+      } catch (sessionError) {
+        console.error('❌ startSession error:', sessionError);
+        console.log('========================================');
+        // If session already exists, alert user to restart app
+        Alert.alert(
+          'Session Already Active',
+          'An Assurance session is already active. Please:\n\n1. Tap "Clear Session"\n2. COMPLETELY CLOSE the app (swipe away from recent apps)\n3. Reopen the app\n4. Then try starting the new session',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
       
       // Check session status
       const version = await Assurance.extensionVersion();
@@ -168,7 +207,12 @@ const AssuranceView = () => {
       }
     } catch (error) {
       console.error('Error starting Assurance session:', error);
-      Alert.alert('Error', 'Failed to start Assurance session');
+      
+      // Clear saved session URL if it failed - it's likely expired
+      await AsyncStorage.removeItem(ASSURANCE_URL_KEY);
+      console.log('Cleared saved Assurance URL (session likely expired)');
+      
+      Alert.alert('Error', 'Failed to start Assurance session. The session may have expired. Please get a new session URL from Adobe Experience Platform Assurance.');
       setRealConnectionStatus('Connection Failed');
     }
   };
@@ -176,6 +220,16 @@ const AssuranceView = () => {
   const clearAssuranceSession = async () => {
     try {
       console.log('Clearing Assurance session from device storage...');
+      
+      // CRITICAL: Terminate the active native session first!
+      try {
+        console.log('Terminating active Assurance session at native level...');
+        // Note: The Adobe SDK doesn't expose a terminate API in React Native
+        // So we clear storage and the session will timeout/disconnect
+        console.log('Native session will disconnect on next app restart');
+      } catch (error) {
+        console.log('Could not terminate native session (expected):', error);
+      }
       
       // Clear from AsyncStorage
       await AsyncStorage.removeItem(ASSURANCE_URL_KEY);
@@ -190,7 +244,11 @@ const AssuranceView = () => {
       // Clear debug logs
       setDebugInfo('');
       
-      Alert.alert('Success', 'Assurance session cleared from device storage');
+      Alert.alert(
+        'Session Cleared',
+        'Assurance session cleared. Please RESTART the app completely to start a fresh session.',
+        [{ text: 'OK' }]
+      );
       console.log('Assurance session clearing completed successfully');
       
     } catch (error) {
@@ -385,6 +443,55 @@ const AssuranceView = () => {
     }
   };
 
+  const debugSessionComparison = async () => {
+    try {
+      console.log('========================================');
+      console.log('=== SESSION COMPARISON DEBUG ===');
+      console.log('========================================');
+      
+      // Check React Native state
+      console.log('React Native State:');
+      console.log('  sessionURL (state):', sessionURL);
+      console.log('  isSessionActive:', isSessionActive);
+      
+      // Check AsyncStorage
+      console.log('\nAsyncStorage:');
+      const savedURL = await AsyncStorage.getItem(ASSURANCE_URL_KEY);
+      console.log('  Saved URL:', savedURL);
+      if (savedURL) {
+        const savedMatch = savedURL.match(/adb_validation_sessionid=([a-f0-9-]+)/);
+        console.log('  Saved Session ID:', savedMatch ? savedMatch[1] : 'NOT_FOUND');
+      }
+      
+      // Check current input
+      console.log('\nCurrent Input:');
+      if (sessionURL) {
+        const inputMatch = sessionURL.match(/adb_validation_sessionid=([a-f0-9-]+)/);
+        console.log('  Input Session ID:', inputMatch ? inputMatch[1] : 'NOT_FOUND');
+      } else {
+        console.log('  No input URL');
+      }
+      
+      // Get all Adobe-related keys
+      console.log('\nAll Adobe Storage Keys:');
+      const allKeys = await AsyncStorage.getAllKeys();
+      const adobeKeys = allKeys.filter(key => 
+        key.toLowerCase().includes('adobe') || 
+        key.toLowerCase().includes('assurance')
+      );
+      for (const key of adobeKeys) {
+        const value = await AsyncStorage.getItem(key);
+        console.log(`  ${key}:`, value);
+      }
+      
+      console.log('========================================');
+      
+      Alert.alert('Debug Info', 'Session comparison logged to console. Check Metro logs and run:\n\nadb logcat | grep "AssuranceSession - Connecting"');
+    } catch (error) {
+      console.error('Error in debug session comparison:', error);
+    }
+  };
+
   return (
     <ThemedView style={styles.container}>
       <ScrollView contentContainerStyle={{marginTop: 75, paddingBottom: 100}}>
@@ -413,7 +520,7 @@ const AssuranceView = () => {
             borderColor: theme.colors.border,
             borderWidth: 1,
           }}
-          placeholder="assurance://"
+          placeholder="myapp://"
           placeholderTextColor={theme.colors.text}
           value={sessionURL}
           onChangeText={setSessionURL}
@@ -448,6 +555,11 @@ const AssuranceView = () => {
         <Button 
           title="Debug Sandbox Configuration" 
           onPress={debugSandboxConfiguration}
+        />
+        <View style={{ marginTop: 10 }} />
+        <Button 
+          title="🔍 Compare Session IDs" 
+          onPress={debugSessionComparison}
         />
         
         {debugInfo ? (

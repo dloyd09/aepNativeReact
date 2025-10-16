@@ -39,6 +39,10 @@ function setDefaultConsent(allowed: boolean) {
     'consent.default': {consents: {collect: collectConsentStatus}},
   };
   MobileCore.updateConfiguration(defaultConsents);
+  console.log(
+    'AdobeExperienceSDK: Default consent set to: ' +
+      JSON.stringify(defaultConsents),
+  );
 }
 
 const ConsentView = () => {

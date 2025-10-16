@@ -17,7 +17,8 @@
       "bundleIdentifier": "com.cmtBootCamp.AEPSampleAppNewArchEnabled",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "apnsEnvironment": "production"
     },
     "android": {
       "adaptiveIcon": {

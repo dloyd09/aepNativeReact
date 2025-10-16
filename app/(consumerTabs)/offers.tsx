@@ -3,12 +3,15 @@ import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
 import { View, TouchableOpacity, StyleSheet, Button, Image, FlatList } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useTheme } from '@react-navigation/native';
+import { useTheme, useFocusEffect } from '@react-navigation/native';
 import { MobileCore } from '@adobe/react-native-aepcore';
 import { Optimize, DecisionScope, Proposition } from '@adobe/react-native-aepoptimize';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Identity, IdentityMap, AuthenticatedState } from '@adobe/react-native-aepedgeidentity';
+import { Edge } from '@adobe/react-native-aepedge';
 import { useCart } from '../../components/CartContext';
+import { useCartSession } from '../../hooks/useCartSession';
+import { buildPageViewEvent, buildProductListAddEvent } from '../../src/utils/xdmEventBuilders';
 
 const PROFILE_KEY = 'userProfile';
 const DECISION_SCOPE_KEY = 'optimize_decision_scope';
@@ -28,13 +31,11 @@ export function useProfileStorage() {
         const storedScope = await AsyncStorage.getItem(DECISION_SCOPE_KEY);
         if (storedScope) {
           setDecisionScope(storedScope);
-          console.log('Decision scope loaded from AsyncStorage:', storedScope);
         }
       } catch (error) {
         console.error('Failed to load data from storage:', error);
       } finally {
         setIsLoading(false);
-        console.log('Loading complete, isLoading set to false');
       }
     };
 
@@ -73,20 +74,13 @@ interface Offer {
   sku: string; // Make sku required to match CartItem
 }
 
-const OfferCard = ({ offer, styles, colors, addToCart }: { offer: Offer, styles: any, colors: any, addToCart: (offer: Offer) => void }) => {
-  const [isAdded, setIsAdded] = React.useState(false);
+const OfferCard = ({ offer, styles, colors, addToCart, isInCart }: { offer: Offer, styles: any, colors: any, addToCart: (offer: Offer) => void, isInCart: (name: string, category: string) => boolean }) => {
+  const itemName = offer.title || 'Unnamed Offer';
+  const itemCategory = offer.category || 'defaultCategory';
+  const isAdded = isInCart(itemName, itemCategory);
 
   const handleAddToCart = () => {
-    addToCart({
-      name: offer.title || 'Unnamed Offer',
-      title: offer.title,
-      category: offer.category || 'defaultCategory',
-      sku: offer.sku || 'defaultSku',
-      price: offer.price,
-      text: offer.text,
-      image: offer.image
-    });
-    setIsAdded(true);
+    addToCart(offer);
   };
 
   return (
@@ -126,7 +120,20 @@ export default function OffersTab() {
   const { profile, setProfile, decisionScope, setDecisionScope } = useProfileStorage();
   const [offers, setOffers] = useState<Offer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { addToCart } = useCart();
+  const { addToCart, isInCart } = useCart();
+  const { cartSessionId, isLoading: isCartSessionLoading } = useCartSession();
+  const [identityMap, setIdentityMap] = useState({});
+
+  // Initialize identityMap on component mount
+  useEffect(() => {
+    Identity.getIdentities().then((result) => {
+      if (result && result.identityMap) {
+        setIdentityMap(result.identityMap);
+      } else {
+        setIdentityMap(result);
+      }
+    });
+  }, []);
 
   const styles = StyleSheet.create({
     card: {
@@ -168,44 +175,18 @@ export default function OffersTab() {
   });
 
   useEffect(() => {
-    console.log('OffersTab view loaded'); // Log when the view is loaded
-
-    // Track page view analytics
-    MobileCore.trackAction('pageView', {
-      'page.name': 'Offers',
-      'page.category': 'Consumer',
-      'page.type': 'Offers View',
-      'user.journey': 'Navigation',
-    });
-
-    // Ensure SDK is fully initialized
-    const ensureSDKInitialized = async () => {
-      console.log('Ensuring SDK is fully initialized...');
-      try {
-        const sdkReady = true; // Replace with actual check
-        if (!sdkReady) {
-          console.error('SDK is not fully ready');
-          return;
-        }
-        console.log('SDK is fully initialized');
-      } catch (error) {
-        console.error('Error during SDK initialization check:', error);
-      }
-    };
-
-    ensureSDKInitialized();
+    // XDM page view tracking will be handled by useFocusEffect below
+    // (Keeping this useEffect for the subscription setup)
 
     // Subscribe to proposition updates
     Optimize.onPropositionUpdate({
       call(propositions) {
-        console.log('Proposition update received:', propositions);
         if (propositions) {
           const updatedOffers = propositions.get(decisionScope)?.items.map(item => {
             const characteristics = item.data.characteristics || {};
             let parsedContent;
             try {
               parsedContent = JSON.parse(item.data.content);
-              console.log('Parsed Content:', parsedContent); // Log parsed content
             } catch (e) {
               console.error('Error parsing content:', e);
               parsedContent = {};
@@ -221,97 +202,131 @@ export default function OffersTab() {
             };
           }) || [];
           setOffers(updatedOffers);
-          console.log('Updated offers:', updatedOffers);
         }
       },
     });
 
-    // Load profile and decision scope
-    const loadProfileAndScope = async () => {
-      try {
-        const storedProfile = await AsyncStorage.getItem(PROFILE_KEY);
-        if (storedProfile) {
-          setProfile(JSON.parse(storedProfile));
-        }
-        const storedScope = await AsyncStorage.getItem(DECISION_SCOPE_KEY);
-        if (storedScope) {
-          setDecisionScope(storedScope);
-          console.log('Decision scope loaded from AsyncStorage:', storedScope);
-        } else {
-          console.error('No decision scope found in AsyncStorage');
-        }
-      } catch (error) {
-        console.error('Failed to load data from storage:', error);
-      }
+    // Cleanup function
+    return () => {
+      // Any cleanup if needed
     };
-
-    loadProfileAndScope();
   }, []);
+
+  // Load profile and decision scope when tab comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const loadProfileAndScope = async () => {
+        try {
+          const storedProfile = await AsyncStorage.getItem(PROFILE_KEY);
+          if (storedProfile) {
+            setProfile(JSON.parse(storedProfile));
+          }
+          const storedScope = await AsyncStorage.getItem(DECISION_SCOPE_KEY);
+          if (storedScope) {
+            setDecisionScope(storedScope);
+            console.log('✅ Decision scope loaded from AsyncStorage:', storedScope);
+          } else {
+            console.log('⚠️ No decision scope found in AsyncStorage - please configure in Technical View → Optimize');
+          }
+        } catch (error) {
+          console.error('Failed to load data from storage:', error);
+        }
+      };
+
+      loadProfileAndScope();
+    }, [])
+  );
+
+  // Send XDM page view when tab comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const handleFocus = async () => {
+        // Check if identityMap is ready
+        if (!identityMap || Object.keys(identityMap).length === 0) {
+          console.log('Offers - IdentityMap not ready, skipping page view');
+          return;
+        }
+
+        // Get fresh profile from AsyncStorage
+        let currentProfile = { firstName: '', email: '' };
+        try {
+          const storedProfile = await AsyncStorage.getItem(PROFILE_KEY);
+          if (storedProfile) {
+            currentProfile = JSON.parse(storedProfile);
+          }
+        } catch (error) {
+          console.error('Failed to read profile:', error);
+        }
+
+        // Send page view
+        try {
+          const pageViewEvent = await buildPageViewEvent({
+            identityMap,
+            profile: currentProfile,
+            pageTitle: 'Offers',
+            pagePath: '/offers',
+            pageType: 'offers',
+            siteSection2: 'Shopping',
+            siteSection3: 'Personalized Offers'
+          });
+
+          console.log('📤 Sending offers page view event');
+          await Edge.sendEvent(pageViewEvent);
+          
+          console.log('✅ Offers page view sent successfully');
+        } catch (error) {
+          console.error('❌ Error sending offers page view:', error);
+        }
+      };
+
+      handleFocus();
+    }, [identityMap])
+  );
 
   // Call getPropositions when decisionScope is set
   useEffect(() => {
     if (decisionScope) {
-      console.log('Decision scope is set, calling getPropositions');
       getPropositions();
     }
   }, [decisionScope]);
 
   const getPropositions = async () => {
-    console.log('Get Propositions called');
     if (!decisionScope) {
-      console.error('Error: No decision scope found in AsyncStorage');
-      console.log('Available decision scope:', decisionScope);
+      console.log('⚠️ Cannot fetch propositions - no decision scope configured');
+      console.log('→ Please configure decision scope in Technical View → Optimize');
       return;
     }
     
-    console.log('Using decision scope from AsyncStorage:', decisionScope);
     const userScope = new DecisionScope(decisionScope);
-    console.log('Created DecisionScope with name:', userScope.getName());
-
-    // Log the ECID or full identity map
-    console.log('Fetching identity map...');
-    try {
-      const identityMap = await Identity.getIdentities();
-      console.log('Identity Map:', identityMap);
-    } catch (error) {
-      console.error('Error fetching identity map:', error);
-    }
 
     let ecid;
-    // Use getExperienceCloudId to retrieve the ECID
-    console.log('Fetching ECID...');
     try {
       ecid = await Identity.getExperienceCloudId();
       if (!ecid) {
         console.error('ECID not found');
         return;
       }
-      console.log('ECID found:', ecid);
     } catch (error) {
       console.error('Error fetching ECID:', error);
+      return;
     }
 
     const xdmData = { "xdm": { "identityMap": { "ECID": { "id": ecid, "primary": true } } } };
 
-    // Adjust the getPropositions call
-    console.log('Fetching propositions from cache...');
     try {
       const propositions: Map<string, Proposition> =
         await Optimize.getPropositions([userScope]);
-      console.log('Propositions response received:', propositions);
       
       if (propositions && propositions.size > 0) {
         const scopeName = userScope.getName();
         const proposition = propositions.get(scopeName);
         
         if (proposition && proposition.items && proposition.items.length > 0) {
-          console.log('Found proposition with items:', proposition.items.length);
           const mappedOffers = proposition.items.map(item => {
             const characteristics = item.data.characteristics || {};
             let parsedContent;
             try {
               parsedContent = JSON.parse(item.data.content);
-              console.log('Parsed Content:', parsedContent); // Log parsed content
             } catch (e) {
               console.error('Error parsing content:', e);
               parsedContent = {};
@@ -327,14 +342,11 @@ export default function OffersTab() {
             };
           });
           setOffers(mappedOffers);
-          console.log('Mapped offers:', mappedOffers);
+          console.log('✅ Loaded', mappedOffers.length, 'offer(s)');
         } else {
-          console.log('No items found in proposition');
           setOffers([]);
         }
       } else {
-        console.log('No propositions found in cache');
-        console.log('Available scopes in cache:', Array.from(propositions.keys()));
         setOffers([]);
       }
     } catch (error) {
@@ -350,17 +362,76 @@ export default function OffersTab() {
         identityMap.addItem({ id: profile.email, authenticatedState: AuthenticatedState.AUTHENTICATED, primary: true }, 'Email');
       }
       await Identity.updateIdentities(identityMap);
-      console.log('Updated identity map:', identityMap);
     } catch (error) {
       console.error('Error updating identity map:', error);
     }
   };
 
-  return (
-    <ThemedView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-      <Ionicons name="gift" size={48} color="#007AFF" />
-      <ThemedText style={{ fontSize: 24, marginTop: 12 }}>Offers View</ThemedText>
+  // Wrapper function for add to cart with XDM tracking
+  const handleAddToCartWithTracking = async (offer: Offer) => {
+    // Add to cart context first
+    addToCart({
+      name: offer.title || 'Unnamed Offer',
+      title: offer.title,
+      category: offer.category || 'defaultCategory',
+      sku: offer.sku || 'defaultSku',
+      price: offer.price,
+      image: offer.image
+    });
+
+    // Check prerequisites for XDM tracking
+    if (isCartSessionLoading || !cartSessionId) {
+      console.log('Cart session not ready, skipping add to cart XDM event');
+      return;
+    }
+
+    if (!identityMap || Object.keys(identityMap).length === 0) {
+      console.log('IdentityMap not ready, skipping add to cart XDM event');
+      return;
+    }
+
+    // Get fresh profile from AsyncStorage
+    let currentProfile = { firstName: '', email: '' };
+    try {
+      const storedProfile = await AsyncStorage.getItem(PROFILE_KEY);
+      if (storedProfile) {
+        currentProfile = JSON.parse(storedProfile);
+      }
+    } catch (error) {
+      console.error('Failed to read profile:', error);
+    }
+
+    // Send XDM productListAdd event
+    try {
+      const productListAddEvent = await buildProductListAddEvent({
+        identityMap,
+        profile: currentProfile,
+        product: {
+          sku: offer.sku || 'defaultSku',
+          name: offer.title || 'Unnamed Offer',
+          price: offer.price,
+          category: offer.category || 'offers',
+          quantity: 1
+        },
+        cartSessionId
+      });
+
+      console.log('📤 Sending offer add to cart event:', offer.title);
+      await Edge.sendEvent(productListAddEvent);
       
+      console.log('✅ Offer add to cart event sent successfully:', {
+        name: offer.title,
+        sku: offer.sku,
+        price: offer.price,
+        cartSessionId
+      });
+    } catch (error) {
+      console.error('❌ Error sending offer add to cart event:', error);
+    }
+  };
+
+  return (
+    <ThemedView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>      
       {offers.length === 0 ? (
         <View style={{ padding: 20, alignItems: 'center' }}>
           <ThemedText style={{ fontSize: 16, color: colors.text, marginBottom: 10 }}>
@@ -375,7 +446,7 @@ export default function OffersTab() {
       ) : (
         <FlatList
           data={offers}
-          renderItem={({ item }) => <OfferCard offer={item} styles={styles} colors={colors} addToCart={addToCart} />}
+          renderItem={({ item }) => <OfferCard offer={item} styles={styles} colors={colors} addToCart={handleAddToCartWithTracking} isInCart={isInCart} />}
           keyExtractor={(item, index) => index.toString()}
           contentContainerStyle={styles.list}
         />

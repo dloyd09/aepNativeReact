@@ -1,17 +1,18 @@
 import Clipboard from '@react-native-clipboard/clipboard';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { View, Button, TextInput } from 'react-native';
 import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
 import { useTheme } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
-import { MobileCore } from '@adobe/react-native-aepcore';
+import { Edge } from '@adobe/react-native-aepedge';
 import { Identity, AuthenticatedState, IdentityMap, IdentityItem } from '@adobe/react-native-aepedgeidentity';
 import { UserProfile } from '@adobe/react-native-aepuserprofile';
-//import { useProfile } from '../../components/ProfileContext';
-import { useProfileStorage } from '../../hooks/useProfileStorage'; // Adjust the path as necessary
+import { useProfileStorage } from '../../hooks/useProfileStorage';
+import { buildPageViewEvent, buildLoginEvent, buildLogoutEvent } from '../../src/utils/xdmEventBuilders';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function ProfileTab() {
   const [loggedIn, setLoggedIn] = useState(false);
@@ -28,41 +29,84 @@ export default function ProfileTab() {
   const { profile, setProfile } = useProfileStorage();
   //console.log('Profile Context:', { profile });
 
+  // Initialize identityMap on component mount
+  useEffect(() => {
+    Identity.getIdentities().then((result) => {
+      console.log('Profile - Raw identity result:', JSON.stringify(result, null, 2));
+      if (result && result.identityMap) {
+        setIdentityMap(result.identityMap);
+      } else {
+        setIdentityMap(result);
+      }
+    });
+
+    // Also fetch ECID for display
+    Identity.getExperienceCloudId().then(setEcid);
+  }, []);
+
+  // Send page view when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      MobileCore.trackState('ProfileTab', {
-        'web.webPageDetails.name': 'Profile',
-        'application.name': 'WeRetailMobileApp',
-      });
-      //console.log('ProfileTab viewed - trigger Adobe tracking here');
+      const handleFocus = async () => {
+        // Check if identityMap is ready
+        if (!identityMap || Object.keys(identityMap).length === 0) {
+          console.log('Profile - IdentityMap not ready, skipping page view');
+          return;
+        }
 
-      // Fetch ECID
-      Identity.getExperienceCloudId().then(setEcid);
+        // Get fresh profile from AsyncStorage
+        let currentProfile = { firstName: '', email: '' };
+        try {
+          const storedProfile = await AsyncStorage.getItem('userProfile');
+          if (storedProfile) {
+            currentProfile = JSON.parse(storedProfile);
+          }
+        } catch (error) {
+          console.error('Failed to read profile:', error);
+        }
 
-      // Fetch Identity Map
-      Identity.getIdentities().then(setIdentityMap);
-    }, [])
+        // Send page view
+        try {
+          const pageViewEvent = await buildPageViewEvent({
+            identityMap,
+            profile: currentProfile,
+            pageTitle: 'Profile',
+            pagePath: '/profile',
+            pageType: 'profile',
+            siteSection2: 'Account',
+            siteSection3: 'Profile'
+          });
+
+          console.log('📤 Sending profile page view event');
+          await Edge.sendEvent(pageViewEvent);
+          
+          console.log('✅ Profile page view sent successfully:', {
+            participantName: currentProfile?.firstName || 'Guest User',
+            loginStatus: currentProfile?.firstName ? 'logged_in' : 'guest'
+          });
+        } catch (error) {
+          console.error('❌ Error sending profile page view:', error);
+        }
+      };
+
+      handleFocus();
+    }, [identityMap])
   );
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!inputFirstName || !inputEmail || !inputPassword) {
       setError('Please fill in all fields.');
       return;
     }
+
+    // Update local state
     setFirstName(inputFirstName);
     setEmail(inputEmail);
     setPassword(''); // Don't store password
     setLoggedIn(true);
     setError('');
-    MobileCore.trackAction('login', {
-      method: 'basic',
-      application: 'AEPSampleApp',
-      firstName: inputFirstName,
-      email: inputEmail,
-    });
-    //console.log('User logged in - trigger Adobe login tracking here');
 
-    // Update user profile in AEP
+    // Update user profile in AEP UserProfile extension
     UserProfile.updateUserAttributes({
       firstName: inputFirstName,
       email: inputEmail,
@@ -70,23 +114,66 @@ export default function ProfileTab() {
     console.log('User profile updated in AEP');
 
     // Create an IdentityMap and add the email and ECID identities
-    const identityMap = new IdentityMap();
+    const newIdentityMap = new IdentityMap();
     const emailIdentity = new IdentityItem(inputEmail, AuthenticatedState.AUTHENTICATED, true);
     const ecidIdentity = new IdentityItem(ecid, AuthenticatedState.AUTHENTICATED, false);
-    identityMap.addItem(emailIdentity, 'Email');
-    identityMap.addItem(ecidIdentity, 'ECID');
+    newIdentityMap.addItem(emailIdentity, 'Email');
+    newIdentityMap.addItem(ecidIdentity, 'ECID');
 
     // Update identities in AEP
-    Identity.updateIdentities(identityMap);
+    Identity.updateIdentities(newIdentityMap);
     console.log('Email and ECID set as authenticated identities in AEP');
 
-    // After successful login
-    // console.log('Setting profile with:', { firstName: inputFirstName, email: inputEmail });
+    // Save profile to AsyncStorage
     setProfile({ firstName: inputFirstName, email: inputEmail });
-    console.log('Setting profile with:', { firstName: inputFirstName, email: inputEmail });
+    console.log('Profile saved to AsyncStorage:', { firstName: inputFirstName, email: inputEmail });
+
+    // Send login success event with updated identityMap
+    try {
+      // Fetch updated identityMap after setting authenticated identities
+      const updatedIdentities = await Identity.getIdentities();
+      const currentIdentityMap = updatedIdentities.identityMap || updatedIdentities;
+
+      const loginEvent = await buildLoginEvent({
+        identityMap: currentIdentityMap,
+        profile: { firstName: inputFirstName, email: inputEmail },
+        success: true,
+        method: 'basic'
+      });
+
+      console.log('📤 Sending login success event');
+      await Edge.sendEvent(loginEvent);
+      
+      console.log('✅ Login event sent successfully:', {
+        participantName: inputFirstName,
+        email: inputEmail,
+        loginStatus: 'logged_in'
+      });
+
+      // Update local identityMap state
+      setIdentityMap(currentIdentityMap);
+    } catch (error) {
+      console.error('❌ Error sending login event:', error);
+    }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Send logout event BEFORE clearing state
+    try {
+      const logoutEvent = await buildLogoutEvent({
+        identityMap,
+        profile: { firstName, email }
+      });
+
+      console.log('📤 Sending logout event');
+      await Edge.sendEvent(logoutEvent);
+      
+      console.log('✅ Logout event sent successfully');
+    } catch (error) {
+      console.error('❌ Error sending logout event:', error);
+    }
+
+    // Clear local state
     setLoggedIn(false);
     setFirstName('');
     setEmail('');
@@ -94,10 +181,10 @@ export default function ProfileTab() {
     setInputEmail('');
     setInputPassword('');
     setError('');
-    MobileCore.trackAction('logout', {
-      application: 'AEPSampleApp',
-    });
-    console.log('User logged out');
+
+    // Clear profile from AsyncStorage
+    setProfile({ firstName: '', email: '' });
+    console.log('User logged out and profile cleared');
   };
 
   const copyToClipboard = (text: string) => {

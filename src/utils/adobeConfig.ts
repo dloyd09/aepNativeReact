@@ -67,9 +67,9 @@ export const configureAdobe = async (appId: string) => {
   try {
     console.log('Starting Adobe SDK configuration...');
     
-    // Set log level
-    console.log('Setting log level to DEBUG');
-    MobileCore.setLogLevel(LogLevel.DEBUG);
+    // Set log level to ERROR for normal operation (use VERBOSE for debugging)
+    console.log('Setting log level to ERROR');
+    MobileCore.setLogLevel(LogLevel.ERROR);
     
     // Initialize with App ID
     console.log('Initializing MobileCore with App ID:', appId);

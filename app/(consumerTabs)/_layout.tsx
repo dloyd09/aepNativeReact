@@ -7,6 +7,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 export type RootStackParamList = {
   home: undefined;
   offers: undefined;
+  decisioningItems: undefined;
   cart: undefined;
   profile: undefined;
   Checkout: undefined; // Ensure this matches your route name
@@ -32,6 +33,15 @@ export default function ConsumerTabsLayout() {
           title: 'Offers',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="gift" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="decisioningItems"
+        options={{
+          title: 'Decisions',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="diamond" color={color} size={size} />
           ),
         }}
       />

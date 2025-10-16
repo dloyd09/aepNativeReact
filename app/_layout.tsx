@@ -3,7 +3,6 @@ import * as SplashScreen from 'expo-splash-screen';
 import 'react-native-reanimated';
 import { Drawer } from 'expo-router/drawer';
 import { useEffect } from 'react';
-import { useIsFocused } from '@react-navigation/native';
 import { MobileCore, LogLevel } from '@adobe/react-native-aepcore';
 import { Assurance } from '@adobe/react-native-aepassurance';
 import { CartProvider } from '../components/CartContext';
@@ -17,7 +16,6 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const scheme = useColorScheme();
-  const isFocused = useIsFocused();
   const { colors } = useTheme();
 
   const isDark = scheme === 'dark';
@@ -28,8 +26,8 @@ export default function RootLayout() {
       try {
         const appId = await getStoredAppId();
         if (appId) {
-          // Set debug logging
-          MobileCore.setLogLevel(LogLevel.DEBUG);
+          // Set verbose logging for maximum Assurance debugging
+          MobileCore.setLogLevel(LogLevel.VERBOSE);
           await configureAdobe(appId);
           console.log('Adobe SDK and Assurance initialized successfully');
         } else {
@@ -46,21 +44,8 @@ export default function RootLayout() {
     SplashScreen.hideAsync();
   }, []);
 
-  useEffect(() => {
-    if (isFocused) {
-      // Only run when HomeTab is actually focused
-      try {
-        MobileCore.trackState('HomeTab', {
-          'web.webPageDetails.name': 'Home',
-          'application.name': 'WeRetailMobileApp',
-          // Add any additional dynamic data here
-        });
-        console.log('HomeTab viewed - Adobe tracking successful');
-      } catch (error) {
-        console.error('Failed to track HomeTab view:', error);
-      }
-    }
-  }, [isFocused]);
+  // Note: Page view tracking now handled by XDM events in individual consumer tabs
+  // See home.tsx, cart.tsx, profile.tsx, etc. for Edge.sendEvent() implementations
 
   return (
     <CartProvider>
@@ -82,6 +67,7 @@ export default function RootLayout() {
           <Drawer.Screen name="(techScreens)/AssuranceView" options={{ title: 'Assurance', drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="(techScreens)/ConsentView" options={{ title: 'Consent', drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="(techScreens)/CoreView" options={{ title: 'Core / Lifecycle / Signal', drawerItemStyle: { display: 'none' } }} />
+          <Drawer.Screen name="(techScreens)/DecisioningItemsView" options={{ title: 'Decisioning Items', drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="(techScreens)/EdgeBridgeView" options={{ title: 'Edge Bridge', drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="(techScreens)/EdgeIdentityView" options={{ title: 'Edge Identity', drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="(techScreens)/EdgeView" options={{ title: 'Edge', drawerItemStyle: { display: 'none' } }} />

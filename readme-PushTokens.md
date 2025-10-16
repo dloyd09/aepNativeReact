@@ -77,27 +77,32 @@ Result:       ❌ Mismatch - notifications won't work
 
 ## 🛠️ Technical Details
 
+> **Note:** This app uses `MobileCore.setPushIdentifier()` for token registration, which automatically registers tokens with both Adobe Messaging and Assurance services. The older `Messaging.setPushIdentifier()` method is no longer available in the Adobe Messaging extension.
+
 ### Token Registration Process:
 ```typescript
-// 1. Get FCM token from Firebase
+// 1. Get FCM token from Firebase (Android)
 const fcmToken = await messaging().getToken();
 
-// 2. Register with Adobe Messaging extension
-await Messaging.setPushIdentifier(fcmToken);
+// OR get Expo token (iOS)
+const expoToken = await Notifications.getExpoPushTokenAsync({
+  projectId: 'your-eas-project-id'
+});
 
-// 3. Register with MobileCore (for Assurance)
-await MobileCore.setPushIdentifier(fcmToken);
+// 2. Register with Adobe via MobileCore
+// This automatically registers with both Adobe Messaging and Assurance
+await MobileCore.setPushIdentifier(fcmToken); // Android
+// OR
+await MobileCore.setPushIdentifier(expoToken.data); // iOS
 ```
 
 ### Clearing Tokens:
 ```typescript
-// Clear from Adobe Messaging
-await Messaging.setPushIdentifier('');
-
-// Clear from MobileCore
+// Clear push token from Adobe Services
 await MobileCore.setPushIdentifier('');
 
 // Reset identities (clears ECID and profile)
+// This creates a fresh Adobe profile
 MobileCore.resetIdentities();
 ```
 

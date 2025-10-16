@@ -1,12 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
 import { View, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { useTheme, useNavigation, useFocusEffect } from '@react-navigation/native';
 import ConfettiCannon from 'react-native-confetti-cannon';
-import { MobileCore } from '@adobe/react-native-aepcore';
+import { Edge } from '@adobe/react-native-aepedge';
+import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { useCart } from '../../components/CartContext';
 import { useProfileStorage } from '../../hooks/useProfileStorage';
+import { useCartSession } from '../../hooks/useCartSession';
+import { buildPageViewEvent, buildPurchaseEvent } from '../../src/utils/xdmEventBuilders';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function Checkout() {
   const { colors } = useTheme();
@@ -16,19 +20,90 @@ export default function Checkout() {
   const [email, setEmail] = useState('');
   const { clearCart, cart } = useCart();
   const { profile } = useProfileStorage();
-  //console.log('Profile from storage:', profile);
+  const { cartSessionId, isLoading: isCartSessionLoading, resetCartSession } = useCartSession();
+  
+  const [identityMap, setIdentityMap] = useState({});
+  const [purchaseInProgress, setPurchaseInProgress] = useState(false); // Prevent duplicate page views after purchase
 
+  // Memoize modifiedCart to prevent re-render issues
+  const modifiedCart = useMemo(() => 
+    cart.map(item => ({ ...item, sku: item.sku || 'defaultSku', title: item.title || 'Unnamed Offer' })),
+    [cart]
+  );
+
+  // Fetch Identity Map
+  useEffect(() => {
+    Identity.getIdentities().then((result) => {
+      if (result && result.identityMap) {
+        setIdentityMap(result.identityMap);
+      } else {
+        setIdentityMap(result);
+      }
+    });
+  }, []);
+
+  // Send page view when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      MobileCore.trackAction('pageView', {
-        'page.name': 'Checkout',
-        'page.category': 'Consumer',
-        'page.type': 'Checkout View',
-        'user.journey': 'Navigation',
-        'cart.totalValue': cart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2),
-        'cart.itemCount': cart.length,
-      });
-    }, [cart])
+      const handleFocus = async () => {
+        // Don't send page view if purchase is in progress (prevents duplicate after cart session reset)
+        if (purchaseInProgress) {
+          console.log('Checkout - Purchase in progress, skipping page view');
+          return;
+        }
+
+        // Check prerequisites
+        if (isCartSessionLoading || !cartSessionId) {
+          console.log('Checkout - Cart session not ready, skipping page view');
+          return;
+        }
+
+        if (!identityMap || Object.keys(identityMap).length === 0) {
+          console.log('Checkout - IdentityMap not ready, skipping page view');
+          return;
+        }
+
+        // Get fresh profile from AsyncStorage
+        let currentProfile = { firstName: '', email: '' };
+        try {
+          const storedProfile = await AsyncStorage.getItem('userProfile');
+          if (storedProfile) {
+            currentProfile = JSON.parse(storedProfile);
+          }
+        } catch (error) {
+          console.error('Failed to read profile:', error);
+        }
+
+        // Send page view
+        try {
+          const pageViewEvent = await buildPageViewEvent({
+            identityMap,
+            profile: currentProfile,
+            pageTitle: 'Checkout',
+            pagePath: '/checkout',
+            pageType: 'checkout',
+            siteSection2: 'Commerce',
+            siteSection3: 'Checkout',
+            productListItems: modifiedCart,
+            cartSessionId
+          });
+
+          console.log('📤 Sending checkout page view event');
+          await Edge.sendEvent(pageViewEvent);
+          
+          console.log('✅ Checkout page view sent successfully:', {
+            itemCount: modifiedCart.length,
+            totalValue: modifiedCart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2),
+            cartSessionId,
+            participantName: currentProfile?.firstName || 'Guest User'
+          });
+        } catch (error) {
+          console.error('❌ Error sending checkout page view:', error);
+        }
+      };
+
+      handleFocus();
+    }, [modifiedCart, identityMap, cartSessionId, isCartSessionLoading, purchaseInProgress])
   );
 
   useEffect(() => {
@@ -38,12 +113,57 @@ export default function Checkout() {
     setEmail(profile.email);
   }, [profile]);
 
-  const handlePayment = () => {
-    const totalAmount = cart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2);
-    MobileCore.trackAction('payNow', {
-      'payment.method': 'credit card',
-      'payment.amount': totalAmount, // Use dynamic total amount
-    });
+  const handlePayment = async () => {
+    // Set flag to prevent duplicate page views during purchase flow
+    setPurchaseInProgress(true);
+    
+    const totalAmount = parseFloat(cart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2));
+    
+    // Get fresh profile from AsyncStorage
+    let currentProfile = { firstName: '', email: '' };
+    try {
+      const storedProfile = await AsyncStorage.getItem('userProfile');
+      if (storedProfile) {
+        currentProfile = JSON.parse(storedProfile);
+      }
+    } catch (error) {
+      console.error('Failed to read profile:', error);
+    }
+
+    // Send purchase event
+    try {
+      const purchaseID = `order-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      
+      const purchaseEvent = await buildPurchaseEvent({
+        identityMap,
+        profile: currentProfile,
+        purchaseID,
+        cartSessionId: cartSessionId || 'unknown',
+        productListItems: modifiedCart,
+        priceTotal: totalAmount,
+        currencyCode: 'USD'
+      });
+
+      console.log('📤 Sending purchase event');
+      await Edge.sendEvent(purchaseEvent);
+      
+      console.log('✅ Purchase event sent successfully:', {
+        purchaseID,
+        itemCount: modifiedCart.length,
+        totalAmount,
+        cartSessionId,
+        participantName: currentProfile?.firstName || 'Guest User'
+      });
+
+      // Reset cart session after purchase
+      await resetCartSession();
+      console.log('🔄 Cart session reset after purchase');
+
+    } catch (error) {
+      console.error('❌ Error sending purchase event:', error);
+    }
+
+    // Show confetti and navigate
     setShowConfetti(true);
     setTimeout(() => {
       navigation.navigate('home');

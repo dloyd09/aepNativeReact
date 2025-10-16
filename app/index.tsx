@@ -38,6 +38,7 @@ export default function HomeScreen() {
         <Button onPress={() => navigation.navigate('(techScreens)/TargetView')} title="Target" />
         <Button onPress={() => navigation.navigate('(techScreens)/PlacesView')} title="Places" />
         <Button onPress={() => navigation.navigate('(techScreens)/PushNotificationView')} title="Push Notifications" />
+        <Button onPress={() => navigation.navigate('(techScreens)/DecisioningItemsView')} title="AJO-Decisioning Items" />
       </View>
     </ScrollView>
   );

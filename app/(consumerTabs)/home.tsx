@@ -1,12 +1,15 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
 import { View, FlatList, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { useFocusEffect, useTheme, useNavigationState } from '@react-navigation/native';
-import { MobileCore } from '@adobe/react-native-aepcore';
+import { Edge } from '@adobe/react-native-aepedge';
+import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import productsData from '../productData/bootcamp_products.json';
+import { buildPageViewEvent } from '../../src/utils/xdmEventBuilders';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Extract unique categories from the JSON data
 const CATEGORIES: { key: string; label: string; description: string }[] = Array.from(new Set(productsData.map(product => product.product.categories.primary))).map(category => ({
@@ -37,16 +40,64 @@ export default function HomeTab() {
   const { colors } = useTheme();
   const navigationState = useNavigationState(state => state);
   const previousRouteName = navigationState.routes[navigationState.index - 1]?.name || 'Unknown';
+  
+  const [identityMap, setIdentityMap] = useState({});
 
+  // Initialize identityMap on component mount
+  useEffect(() => {
+    Identity.getIdentities().then((result) => {
+      if (result && result.identityMap) {
+        setIdentityMap(result.identityMap);
+      } else {
+        setIdentityMap(result);
+      }
+    });
+  }, []);
+
+  // Send page view when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      MobileCore.trackState('HomeTab', {
-        'view.name': 'Home',
-        'navigation.previousView': previousRouteName,
-        'application.name': 'WeRetailMobileApp',
-        'timestamp': new Date().toISOString(),
-      });
-    }, [previousRouteName])
+      const handleFocus = async () => {
+        // Check if identityMap is ready
+        if (!identityMap || Object.keys(identityMap).length === 0) {
+          console.log('Home - IdentityMap not ready, skipping page view');
+          return;
+        }
+
+        // Get fresh profile from AsyncStorage
+        let currentProfile = { firstName: '', email: '' };
+        try {
+          const storedProfile = await AsyncStorage.getItem('userProfile');
+          if (storedProfile) {
+            currentProfile = JSON.parse(storedProfile);
+          }
+        } catch (error) {
+          console.error('Failed to read profile:', error);
+        }
+
+        // Send page view
+        try {
+          const pageViewEvent = await buildPageViewEvent({
+            identityMap,
+            profile: currentProfile,
+            pageTitle: 'Home',
+            pagePath: '/home',
+            pageType: 'home',
+            siteSection2: 'Shopping',
+            siteSection3: 'Categories'
+          });
+
+          console.log('📤 Sending home page view event');
+          await Edge.sendEvent(pageViewEvent);
+          
+          console.log('✅ Home page view sent successfully');
+        } catch (error) {
+          console.error('❌ Error sending home page view:', error);
+        }
+      };
+
+      handleFocus();
+    }, [identityMap])
   );
 
   const handleCategoryPress = (categoryKey: string) => {
