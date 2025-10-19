@@ -67,12 +67,25 @@ export class PushNotificationService {
       
       try {
         if (Platform.OS === 'ios') {
-          // iOS: Get real Expo push token (works without Firebase)
-          const expoTokenResponse = await Notifications.getExpoPushTokenAsync({
-            projectId: 'a5b92550-3e0d-4481-8f93-afdd27f8901c', // Your EAS project ID
-          });
-          token = expoTokenResponse.data;
-          console.log('iOS Expo push token:', token);
+          // iOS: Get native device token for Adobe/APNs
+          console.log('iOS: Getting native device token for Adobe...');
+          const deviceTokenResponse = await Notifications.getDevicePushTokenAsync();
+          this.devicePushToken = deviceTokenResponse.data;
+          console.log('iOS Native device token (for Adobe):', this.devicePushToken);
+          
+          // Also get Expo push token for Expo Push Service (optional, for testing)
+          try {
+            const expoTokenResponse = await Notifications.getExpoPushTokenAsync({
+              projectId: 'a5b92550-3e0d-4481-8f93-afdd27f8901c', // Your EAS project ID
+            });
+            console.log('iOS Expo push token (for Expo service):', expoTokenResponse.data);
+          } catch (expoError) {
+            console.log('Note: Expo push token not available (not needed for Adobe)');
+          }
+          
+          // Use native device token for Adobe registration
+          token = this.devicePushToken;
+          console.log('Using native device token for Adobe registration');
         } else {
           // Android: Get real FCM token
           console.log('Android: Getting FCM token...');
