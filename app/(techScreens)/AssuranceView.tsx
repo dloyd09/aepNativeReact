@@ -65,21 +65,19 @@ const AssuranceView = () => {
       // Note: This is a basic check - in a real implementation you might want to
       // call a specific Assurance API that only works when connected
       
-      setRealConnectionStatus('Connected to Adobe Service');
+      setRealConnectionStatus('Connected to Adobe Service ✅');
       console.log('✅ Real connection status: Connected to Adobe Service');
       
-      Alert.alert(
-        'Connection Check Result', 
-        '✅ Connected to Adobe Service\n\nAdobe badge should be visible if:\n• Network allows connection\n• IMS Org matches\n• No firewall blocking'
-      );
+      // No alert on success - preserve badge!
       
       return true;
     } catch (error) {
       console.error('❌ Real connection check failed:', error);
       setRealConnectionStatus('Not Connected to Adobe Service');
       
+      // Only alert on ERROR
       Alert.alert(
-        'Connection Check Result', 
+        'Connection Check Failed', 
         '❌ Not Connected to Adobe Service\n\nPossible causes:\n• Network issues\n• IMS Org mismatch\n• Firewall blocking\n• Invalid session URL\n\nCheck debug info for details.'
       );
       
@@ -200,11 +198,12 @@ const AssuranceView = () => {
       // Check real connection status
       const isReallyConnected = await checkRealConnectionStatus();
       
-      if (isReallyConnected) {
-        Alert.alert('Success', 'Assurance session started successfully and connected to Adobe service. Adobe badge should be visible.');
-      } else {
-        Alert.alert('Partial Success', 'Session started but not connected to Adobe service. Adobe badge will not be visible. Check network and IMS Org settings.');
+      // Only alert on failure - success is silent to preserve badge
+      if (!isReallyConnected) {
+        Alert.alert('Connection Issue', 'Session started but not connected to Adobe service. Adobe badge will not be visible. Check network and IMS Org settings.');
       }
+      // Success = silent, green badge stays visible ✅
+      console.log('✅ Assurance session started successfully - badge should be visible');
     } catch (error) {
       console.error('Error starting Assurance session:', error);
       
