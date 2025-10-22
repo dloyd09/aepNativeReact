@@ -27,6 +27,7 @@ export const options = {
 import React, { useState, useCallback, useEffect } from 'react';
 import { ThemedView } from '../../../../components/ThemedView';
 import { ThemedText } from '../../../../components/ThemedText';
+import { ScrollableContainer } from '../../../../components/ScrollableContainer';
 import { View, StyleSheet, TouchableOpacity, Alert, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Edge } from '@adobe/react-native-aepedge';
@@ -34,52 +35,8 @@ import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { useTheme, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useCart } from '../../../../components/CartContext';
 import { useCartSession } from '../../../../hooks/useCartSession';
-import { buildProductViewEvent, buildProductListAddEvent } from '../../../../src/utils/xdmEventBuilders';
+import { buildProductViewEvent, buildProductListAddEvent, buildPageViewEvent } from '../../../../src/utils/xdmEventBuilders';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Ionicons from '@expo/vector-icons/Ionicons';
-
-const PRODUCT_ICONS: { [key: string]: any } = {
-  // Family
-  'Family Tent (6-person)': 'home',
-  'Family Sleeping Bag Set': 'bed',
-  'Family Camping Cookware': 'restaurant',
-  "Kids' Hiking Boots": 'walk',
-  // Men
-  "Men's Hiking Boots": 'walk',
-  "Men's Waterproof Jacket": 'rainy',
-  "Men's Trekking Pants": 'body',
-  "Men's Base Layer Shirt": 'shirt',
-  // Women
-  "Women's Hiking Boots": 'walk',
-  "Women's Insulated Jacket": 'snow',
-  "Women's Hiking Backpack": 'briefcase',
-  "Women's Quick-Dry Pants": 'body',
-  // Travel
-  'Lightweight Travel Backpack': 'briefcase',
-  'Packable Rain Jacket': 'rainy',
-  'Travel Hammock': 'bed',
-  'Portable Water Filter': 'water',
-  // Experiences
-  'Guided Mountain Hike': 'trail-sign',
-  'Family Camping Weekend': 'bonfire',
-  'Desert Survival Course': 'sunny',
-  'Kayak Adventure Tour': 'boat',
-  // Water
-  'Inflatable Kayak': 'boat',
-  'Waterproof Dry Bag': 'water',
-  'Water Purification Tablets': 'water',
-  'Fishing Kit': 'fish',
-  // Desert
-  'Desert Tent': 'home',
-  'Sun Protection Hat': 'sunny',
-  'Hydration Pack': 'water',
-  'Sand-Proof Blanket': 'bed',
-  // Mountain
-  'Mountaineering Boots': 'walk',
-  'Crampons': 'snow',
-  'Down Sleeping Bag': 'bed',
-  'Avalanche Safety Kit': 'alert',
-};
 
 export default function ProductDetail() {
   const { category, product } = useLocalSearchParams<{ category: string; product: string }>();
@@ -132,7 +89,32 @@ export default function ProductDetail() {
           console.error('Failed to read profile:', error);
         }
 
-        // Send product view event
+        // Send page view event with siteSection hierarchy
+        try {
+          const pageViewEvent = await buildPageViewEvent({
+            identityMap,
+            profile: currentProfile,
+            pageTitle: productData.product.name,
+            pagePath: `/home/${category}/${product}`,
+            pageType: 'product',
+            siteSection: 'Products',
+            siteSection2: productData.product.categories.primary,
+            siteSection3: productData.product.categories.secondary
+          });
+
+          console.log('📤 Sending product page view event:', productData.product.name);
+          await Edge.sendEvent(pageViewEvent);
+          
+          console.log('✅ Product page view sent successfully:', {
+            name: productData.product.name,
+            primary: productData.product.categories.primary,
+            secondary: productData.product.categories.secondary
+          });
+        } catch (error) {
+          console.error('❌ Error sending product page view:', error);
+        }
+
+        // Send product view event (commerce event)
         try {
           const productViewEvent = await buildProductViewEvent({
             identityMap,
@@ -145,17 +127,17 @@ export default function ProductDetail() {
             }
           });
 
-          console.log('📤 Sending product view event:', productData.product.name);
+          console.log('📤 Sending product view commerce event:', productData.product.name);
           await Edge.sendEvent(productViewEvent);
           
-          console.log('✅ Product view sent successfully:', {
+          console.log('✅ Product view commerce event sent successfully:', {
             name: productData.product.name,
             sku: productSku,
             price: productData.product.price,
             category
           });
         } catch (error) {
-          console.error('❌ Error sending product view:', error);
+          console.error('❌ Error sending product view commerce event:', error);
         }
       };
 
@@ -246,7 +228,7 @@ export default function ProductDetail() {
   const added = isInCart(productData.product.name, category ?? '');
 
   return (
-    <ThemedView style={{ flex: 1, paddingTop: 48, paddingHorizontal: 24 }}>
+    <ScrollableContainer contentContainerStyle={{ paddingTop: 48, alignItems: 'center' }}>
       <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 10, alignSelf: 'flex-start', marginBottom: 16 }}>
         <ThemedText style={{ color: colors.primary }}>Back</ThemedText>
       </TouchableOpacity>
@@ -275,7 +257,7 @@ export default function ProductDetail() {
           {added ? 'Added to Cart' : 'Add to Cart'}
         </ThemedText>
       </TouchableOpacity>
-    </ThemedView>
+    </ScrollableContainer>
   );
 }
 

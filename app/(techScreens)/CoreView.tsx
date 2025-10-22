@@ -28,6 +28,7 @@ import { Stack, useRouter } from 'expo-router';
 import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
 import { useTheme } from '@react-navigation/native';
+import Constants from 'expo-constants';
 
 
 function trackAction() {
@@ -149,6 +150,9 @@ const CoreView = () => {
       <ScrollView contentContainerStyle={{marginTop: 75, paddingBottom: 100}}>
         <Button onPress={() => router.back()} title="Go to main page" />
         <ThemedText style={styles.welcome}>Core</ThemedText>
+        <ThemedText style={{ marginVertical: 12, color: theme.colors.text, fontSize: 14, textAlign: 'center' }}>
+          App Version: {Constants.expoConfig?.version || 'Unknown'}
+        </ThemedText>
         <Button title="extensionVersion()" onPress={() => coreExtensionVersion(setLog)} />
         <Button title="updateConfiguration" onPress={updateConfiguration} />
         <Button title="clearUpdatedConfiguration" onPress={clearUpdatedConfiguration} />

@@ -265,9 +265,7 @@ export default function OffersTab() {
             profile: currentProfile,
             pageTitle: 'Offers',
             pagePath: '/offers',
-            pageType: 'offers',
-            siteSection2: 'Shopping',
-            siteSection3: 'Personalized Offers'
+            pageType: 'offers'
           });
 
           console.log('📤 Sending offers page view event');

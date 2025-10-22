@@ -5,6 +5,7 @@ import React, { useCallback, useState, useEffect } from 'react';
 import { View, Button, TextInput } from 'react-native';
 import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
+import { ScrollableContainer } from '../../components/ScrollableContainer';
 import { useTheme } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Edge } from '@adobe/react-native-aepedge';
@@ -72,9 +73,7 @@ export default function ProfileTab() {
             profile: currentProfile,
             pageTitle: 'Profile',
             pagePath: '/profile',
-            pageType: 'profile',
-            siteSection2: 'Account',
-            siteSection3: 'Profile'
+            pageType: 'profile'
           });
 
           console.log('📤 Sending profile page view event');
@@ -193,7 +192,7 @@ export default function ProfileTab() {
   };
 
   return (
-    <ThemedView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+    <ScrollableContainer contentContainerStyle={{ justifyContent: 'center', alignItems: 'center', flexGrow: 1 }}>
       <Ionicons name="person" size={48} color={colors.primary} />
       <ThemedText type="title" style={{ marginTop: 12 }}>Profile</ThemedText>
       <View style={{ marginTop: 24, width: '80%' }}>
@@ -238,6 +237,6 @@ export default function ProfileTab() {
           </>
         )}
       </View>
-    </ThemedView>
+    </ScrollableContainer>
   );
 }

@@ -527,9 +527,7 @@ export default function DecisioningItemsTab() {
             profile: currentProfile,
             pageTitle: 'Decisioning Items',
             pagePath: '/decisioning-items',
-            pageType: 'decisioning',
-            siteSection2: 'Shopping',
-            siteSection3: 'Personalized Offers'
+            pageType: 'decisioning'
           });
 
           console.log('📤 Sending decisioning items page view event');

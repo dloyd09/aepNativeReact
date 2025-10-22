@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
+import { ScrollableContainer } from '../../components/ScrollableContainer';
 import { View, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { useTheme, useNavigation, useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { Edge } from '@adobe/react-native-aepedge';
 import { Identity } from '@adobe/react-native-aepedgeidentity';
@@ -82,8 +84,6 @@ export default function Checkout() {
             pageTitle: 'Checkout',
             pagePath: '/checkout',
             pageType: 'checkout',
-            siteSection2: 'Commerce',
-            siteSection3: 'Checkout',
             productListItems: modifiedCart,
             cartSessionId
           });
@@ -166,49 +166,47 @@ export default function Checkout() {
     // Show confetti and navigate
     setShowConfetti(true);
     setTimeout(() => {
-      navigation.navigate('home');
+      router.replace('/home');
       setShowConfetti(false);
       clearCart();
     }, 3000);
   };
 
   return (
-    <ThemedView style={styles.container}>
-      <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 10, alignSelf: 'flex-start', marginBottom: 16 }}>
-        <ThemedText style={{ color: colors.primary }}>Back</ThemedText>
-      </TouchableOpacity>
-      <ThemedText style={styles.header}>Checkout</ThemedText>
-      <View style={styles.section}>
-        
-        <ThemedText style={styles.shippingInfoTitle}>Shipping Information</ThemedText>
-        <ThemedText style={styles.shippingInfoText}>Name: {firstName}</ThemedText>
-        <ThemedText style={styles.shippingInfoText}>Email: {email}</ThemedText>
-        <ThemedText style={styles.shippingInfoText}>Address: 42 Treehouse Lane, Enchanted Forest</ThemedText>
-        <ThemedText style={styles.shippingInfoText}>City: Mystical Woods</ThemedText>
-        <ThemedText style={styles.shippingInfoText}>State: Tranquility</ThemedText>
-        <ThemedText style={styles.shippingInfoText}>Zip: 00000</ThemedText>
-        <ThemedText style={styles.shippingInfoText}>Contact: (555) 123-4567</ThemedText>
-      </View>
-      <View style={styles.section}>
-        <ThemedText style={styles.paymentInfoTitle}>Payment Details</ThemedText>
-        <ThemedText style={styles.paymentInfoText}>Cardholder: Rainbow Sunshine</ThemedText>
-        <ThemedText style={styles.paymentInfoText}>Card Number: 1234 5678 9012 3456</ThemedText>
-        <ThemedText style={styles.paymentInfoText}>Expiry Date: 12/34</ThemedText>
-        <ThemedText style={styles.paymentInfoText}>CVV: 007</ThemedText>
-      </View>
-      <TouchableOpacity style={[styles.button, { backgroundColor: colors.primary }]} onPress={handlePayment}>
-        <ThemedText style={styles.buttonText}>Pay Now</ThemedText>
-      </TouchableOpacity>
+    <ThemedView style={{ flex: 1 }}>
+      <ScrollableContainer>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 10, alignSelf: 'flex-start', marginBottom: 16 }}>
+          <ThemedText style={{ color: colors.primary }}>Back</ThemedText>
+        </TouchableOpacity>
+        <ThemedText style={styles.header}>Checkout</ThemedText>
+        <View style={styles.section}>
+          
+          <ThemedText style={styles.shippingInfoTitle}>Shipping Information</ThemedText>
+          <ThemedText style={styles.shippingInfoText}>Name: {firstName}</ThemedText>
+          <ThemedText style={styles.shippingInfoText}>Email: {email}</ThemedText>
+          <ThemedText style={styles.shippingInfoText}>Address: 42 Treehouse Lane, Enchanted Forest</ThemedText>
+          <ThemedText style={styles.shippingInfoText}>City: Mystical Woods</ThemedText>
+          <ThemedText style={styles.shippingInfoText}>State: Tranquility</ThemedText>
+          <ThemedText style={styles.shippingInfoText}>Zip: 00000</ThemedText>
+          <ThemedText style={styles.shippingInfoText}>Contact: (555) 123-4567</ThemedText>
+        </View>
+        <View style={styles.section}>
+          <ThemedText style={styles.paymentInfoTitle}>Payment Details</ThemedText>
+          <ThemedText style={styles.paymentInfoText}>Cardholder: Rainbow Sunshine</ThemedText>
+          <ThemedText style={styles.paymentInfoText}>Card Number: 1234 5678 9012 3456</ThemedText>
+          <ThemedText style={styles.paymentInfoText}>Expiry Date: 12/34</ThemedText>
+          <ThemedText style={styles.paymentInfoText}>CVV: 007</ThemedText>
+        </View>
+        <TouchableOpacity style={[styles.button, { backgroundColor: colors.primary }]} onPress={handlePayment}>
+          <ThemedText style={styles.buttonText}>Pay Now</ThemedText>
+        </TouchableOpacity>
+      </ScrollableContainer>
       {showConfetti && <ConfettiCannon count={200} origin={{x: -10, y: 0}} fadeOut={true} />}
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 24,
-  },
   header: {
     fontSize: 24,
     fontWeight: 'bold',

@@ -137,12 +137,18 @@ export default function CategoryProductList() {
 
   // Initialize identityMap on component mount
   useEffect(() => {
+    console.log('Category - Fetching identities...');
     Identity.getIdentities().then((result) => {
+      console.log('Category - Identity result:', JSON.stringify(result, null, 2));
       if (result && result.identityMap) {
+        console.log('Category - Setting identityMap from result.identityMap');
         setIdentityMap(result.identityMap);
       } else {
+        console.log('Category - Setting identityMap from result directly');
         setIdentityMap(result);
       }
+    }).catch((error) => {
+      console.error('Category - Error fetching identities:', error);
     });
   }, []);
 
@@ -167,7 +173,8 @@ export default function CategoryProductList() {
           console.error('Failed to read profile:', error);
         }
 
-        const pageName = category ? category.charAt(0).toUpperCase() + category.slice(1) + ' Category' : 'Category';
+        const pageName = category ? category.charAt(0).toUpperCase() + category.slice(1) + ' Products' : 'Products';
+        const categoryCapitalized = category ? category.charAt(0).toUpperCase() + category.slice(1) : undefined;
 
         // Send page view
         try {
@@ -177,8 +184,8 @@ export default function CategoryProductList() {
             pageTitle: pageName,
             pagePath: `/home/${category}`,
             pageType: 'category',
-            siteSection2: 'Shopping',
-            siteSection3: category || 'Unknown'
+            siteSection: 'Products',
+            siteSection2: categoryCapitalized
           });
 
           console.log(`📤 Sending ${category} category page view event`);

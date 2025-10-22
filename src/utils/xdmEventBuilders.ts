@@ -5,10 +5,14 @@
  * All events comply with SchemaUpdateGuide.md requirements.
  * 
  * Event Types:
- * - Page views (web.webpagedetails.pageViews)
+ * - Page views (mobileApp.navigation.pageViews)
+ * - Navigation clicks (mobileApp.navigation.clicks)
  * - Commerce checkouts (commerce.checkouts)
  * - Product list updates (commerce.productListUpdates)
  * - Product list removals (commerce.productListRemovals)
+ * - Product views (commerce.productViews)
+ * - Product list adds (commerce.productListAdds)
+ * - Purchases (commerce.purchases)
  * - Login/logout (authentication events)
  */
 
@@ -63,6 +67,7 @@ interface PageViewEventParams extends BaseEventParams {
   previousURL?: string;
   previousPageName?: string;
   previousPagePath?: string;
+  siteSection?: string;
   siteSection2?: string;
   siteSection3?: string;
   productListItems?: any[];
@@ -202,14 +207,14 @@ export const buildPageViewEvent = async (
   // Only include identities if we have at least ECID
   const tenantData: any = {
     authentication: {
-      loginStatus: params.profile?.firstName ? 'logged_in' : 'guest'
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
     },
     visitorDetails: {
       visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
     },
     channelInfo: {
-      channel: 'mobile',
-      participantName: params.profile?.firstName || 'Guest User'
+      channel: 'Mobile App',
+      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
     }
   };
 
@@ -223,7 +228,7 @@ export const buildPageViewEvent = async (
 
   const xdmData: any = {
     _id: eventId,  // Required field
-    eventType: 'web.webpagedetails.pageViews',
+    eventType: 'mobileApp.navigation.pageViews',
     timestamp: new Date().toISOString(),
     identityMap: params.identityMap,
     
@@ -234,7 +239,7 @@ export const buildPageViewEvent = async (
     web: {
       webPageDetails: {
         pageViews: {
-          value: 1  // Required field for web.webpagedetails.pageViews eventType
+          value: 1  // Required field for mobileApp.navigation.pageViews eventType
         },
         _adobecmteas: {
           pageTitle: params.pageTitle,
@@ -246,7 +251,12 @@ export const buildPageViewEvent = async (
     }
   };
 
-  // Add optional page context
+  // Add top-level siteSection (outside tenant namespace)
+  if (params.siteSection && params.siteSection !== undefined) {
+    xdmData.web.webPageDetails.siteSection = params.siteSection;
+  }
+
+  // Add optional page context (only if values exist)
   if (params.previousURL) {
     xdmData.web.webPageDetails._adobecmteas.previousURL = params.previousURL;
   }
@@ -256,10 +266,10 @@ export const buildPageViewEvent = async (
   if (params.previousPagePath) {
     xdmData.web.webPageDetails._adobecmteas.previousPagePath = params.previousPagePath;
   }
-  if (params.siteSection2) {
+  if (params.siteSection2 && params.siteSection2 !== undefined) {
     xdmData.web.webPageDetails._adobecmteas.siteSection2 = params.siteSection2;
   }
-  if (params.siteSection3) {
+  if (params.siteSection3 && params.siteSection3 !== undefined) {
     xdmData.web.webPageDetails._adobecmteas.siteSection3 = params.siteSection3;
   }
 
@@ -309,11 +319,11 @@ export const buildCheckoutEvent = async (
   // Build tenant data
   const tenantData: any = {
     authentication: {
-      loginStatus: params.profile?.firstName ? 'logged_in' : 'guest'
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
     },
     channelInfo: {
-      channel: 'mobile',
-      participantName: params.profile?.firstName || 'Guest User'
+      channel: 'Mobile App',
+      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
     }
   };
 
@@ -404,14 +414,14 @@ export const buildProductRemovalEvent = async (
   // Build tenant data
   const tenantData: any = {
     authentication: {
-      loginStatus: params.profile?.firstName ? 'logged_in' : 'guest'
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
     },
     visitorDetails: {
       visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
     },
     channelInfo: {
-      channel: 'mobile',
-      participantName: params.profile?.firstName || 'Guest User'
+      channel: 'Mobile App',
+      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
     }
   };
 
@@ -483,14 +493,14 @@ export const buildPurchaseEvent = async (
   // Build tenant data
   const tenantData: any = {
     authentication: {
-      loginStatus: params.profile?.firstName ? 'logged_in' : 'guest'
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
     },
     visitorDetails: {
       visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
     },
     channelInfo: {
-      channel: 'mobile',
-      participantName: params.profile?.firstName || 'Guest User'
+      channel: 'Mobile App',
+      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
     }
   };
 
@@ -594,10 +604,10 @@ export const buildProductInteractionEvent = async (
       _adobecmteas: {
         identities,
         authentication: {
-          loginStatus: params.profile?.firstName ? 'logged_in' : 'guest'
+          loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
         },
         channelInfo: {
-          channel: 'mobile'
+          channel: 'Mobile App'
         }
       },
       
@@ -657,7 +667,7 @@ export const buildLoginEvent = async (
 
   const xdmData: any = {
     _id: eventId,  // Required field
-    eventType: 'web.webinteraction.linkClicks',
+    eventType: 'mobileApp.navigation.clicks',
     timestamp: new Date().toISOString(),
     identityMap: params.identityMap,
     
@@ -666,14 +676,14 @@ export const buildLoginEvent = async (
       authentication: {
         ...(params.success && { signInSuccess: 1 }),
         ...(!params.success && { signInFailure: 1 }),
-        loginStatus: params.success ? 'logged_in' : 'login_failed'
+        loginStatus: params.success ? 'logged-in' : 'login-failed'
       },
       visitorDetails: {
         visitorType: params.success ? 'Customer' : 'Guest'
       },
       channelInfo: {
-        channel: 'mobile',
-        participantName: params.profile?.firstName || 'Guest User'
+        channel: 'Mobile App',
+        participantName: (params.profile?.firstName || 'guest user').toLowerCase()
       }
     },
     
@@ -689,7 +699,7 @@ export const buildLoginEvent = async (
       },
       webInteraction: {
         linkClicks: {
-          value: 1  // Required field for web.webinteraction.linkClicks eventType
+          value: 1  // Required field for mobileApp.navigation.clicks eventType
         },
         _adobecmteas: {
           engagement: {
@@ -737,7 +747,7 @@ export const buildLogoutEvent = async (
 
   const xdmData: any = {
     _id: eventId,  // Required field
-    eventType: 'web.webinteraction.linkClicks',
+    eventType: 'mobileApp.navigation.clicks',
     timestamp: new Date().toISOString(),
     identityMap: params.identityMap,
     
@@ -745,14 +755,14 @@ export const buildLogoutEvent = async (
       identities,
       authentication: {
         loggoffSuccess: 1,
-        loginStatus: 'logged_out'
+        loginStatus: 'logged-out'
       },
       visitorDetails: {
         visitorType: 'Guest'
       },
       channelInfo: {
-        channel: 'mobile',
-        participantName: 'Guest User'
+        channel: 'Mobile App',
+        participantName: 'guest user'
       }
     },
     
@@ -768,7 +778,7 @@ export const buildLogoutEvent = async (
       },
       webInteraction: {
         linkClicks: {
-          value: 1  // Required field for web.webinteraction.linkClicks eventType
+          value: 1  // Required field for mobileApp.navigation.clicks eventType
         },
         _adobecmteas: {
           engagement: {
@@ -813,14 +823,14 @@ export const buildProductViewEvent = async (
   // Build tenant data
   const tenantData: any = {
     authentication: {
-      loginStatus: params.profile?.firstName ? 'logged_in' : 'guest'
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
     },
     visitorDetails: {
       visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
     },
     channelInfo: {
-      channel: 'mobile',
-      participantName: params.profile?.firstName || 'Guest User'
+      channel: 'Mobile App',
+      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
     }
   };
 
@@ -898,14 +908,14 @@ export const buildProductListAddEvent = async (
   // Build tenant data
   const tenantData: any = {
     authentication: {
-      loginStatus: params.profile?.firstName ? 'logged_in' : 'guest'
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
     },
     visitorDetails: {
       visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
     },
     channelInfo: {
-      channel: 'mobile',
-      participantName: params.profile?.firstName || 'Guest User'
+      channel: 'Mobile App',
+      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
     }
   };
 

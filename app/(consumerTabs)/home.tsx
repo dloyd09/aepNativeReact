@@ -51,6 +51,8 @@ export default function HomeTab() {
       } else {
         setIdentityMap(result);
       }
+    }).catch((error) => {
+      console.error('Home - Error fetching identities:', error);
     });
   }, []);
 
@@ -83,8 +85,7 @@ export default function HomeTab() {
             pageTitle: 'Home',
             pagePath: '/home',
             pageType: 'home',
-            siteSection2: 'Shopping',
-            siteSection3: 'Categories'
+            siteSection: 'Home'
           });
 
           console.log('📤 Sending home page view event');

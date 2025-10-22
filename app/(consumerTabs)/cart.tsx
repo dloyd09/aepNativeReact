@@ -150,8 +150,6 @@ export default function CartTab() {
             pageTitle: 'Shopping Cart',
             pagePath: '/cart',
             pageType: 'cart',
-            siteSection2: 'Commerce',
-            siteSection3: 'Cart',
             productListItems: modifiedCart,
             cartSessionId
           });

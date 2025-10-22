@@ -27,15 +27,16 @@ export default function ConsumerTabsLayout() {
           ),
         }}
       />
-      <Tabs.Screen
+       <Tabs.Screen
         name="offers"
         options={{
           title: 'Offers',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="gift" color={color} size={size} />
           ),
+          tabBarButton: () => null, // Hide from tab bar (file still accessible)
         }}
-      />
+      /> 
       <Tabs.Screen
         name="decisioningItems"
         options={{
