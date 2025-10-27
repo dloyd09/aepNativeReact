@@ -8,6 +8,7 @@ import { router } from 'expo-router';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { Edge } from '@adobe/react-native-aepedge';
 import { Identity } from '@adobe/react-native-aepedgeidentity';
+import { Messaging } from '@adobe/react-native-aepmessaging';
 import { useCart } from '../../components/CartContext';
 import { useProfileStorage } from '../../hooks/useProfileStorage';
 import { useCartSession } from '../../hooks/useCartSession';
@@ -154,6 +155,11 @@ export default function Checkout() {
         cartSessionId,
         participantName: currentProfile?.firstName || 'Guest User'
       });
+
+      // Refresh in-app messages after purchase (to fetch any triggered messages)
+      console.log('🔄 Refreshing in-app messages...');
+      await Messaging.refreshInAppMessages();
+      console.log('✅ In-app messages refreshed');
 
       // Reset cart session after purchase
       await resetCartSession();

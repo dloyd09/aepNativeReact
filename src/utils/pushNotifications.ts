@@ -162,6 +162,10 @@ export class PushNotificationService {
    * Schedule a local notification
    */
   async scheduleLocalNotification(title: string, body: string, data?: any, trigger?: Notifications.NotificationTriggerInput) {
+    console.log('📝 Scheduling local notification with data:', data);
+    console.log('📝 Data type:', typeof data);
+    console.log('📝 Data stringified:', JSON.stringify(data));
+    
     await Notifications.scheduleNotificationAsync({
       content: {
         title,
@@ -301,7 +305,7 @@ export class PushNotificationService {
           await this.scheduleLocalNotification(
             title,
             body,
-            JSON.stringify(remoteMessage.data || {})
+            remoteMessage.data || {}
           );
         } else {
           // Show local notification for non-Adobe messages
@@ -309,14 +313,14 @@ export class PushNotificationService {
             await this.scheduleLocalNotification(
               String(remoteMessage.notification.title || 'Push Notification'),
               String(remoteMessage.notification.body || 'You have a new message'),
-              JSON.stringify(remoteMessage.data || {})
+              remoteMessage.data || {}
             );
           } else if (remoteMessage.data) {
             // Handle data-only messages
             await this.scheduleLocalNotification(
               'Push Notification',
               'You have a new message',
-              JSON.stringify(remoteMessage.data || {})
+              remoteMessage.data || {}
             );
           }
         }

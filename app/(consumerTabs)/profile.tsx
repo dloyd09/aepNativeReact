@@ -45,6 +45,16 @@ export default function ProfileTab() {
     Identity.getExperienceCloudId().then(setEcid);
   }, []);
 
+  // Restore login state if profile exists in storage
+  useEffect(() => {
+    if (profile.firstName && profile.email) {
+      console.log('Restoring previous login session:', profile);
+      setLoggedIn(true);
+      setFirstName(profile.firstName);
+      setEmail(profile.email);
+    }
+  }, [profile]);
+
   // Send page view when screen comes into focus
   useFocusEffect(
     useCallback(() => {
@@ -113,9 +123,10 @@ export default function ProfileTab() {
     console.log('User profile updated in AEP');
 
     // Create an IdentityMap and add the email and ECID identities
+    // ECID is primary (stable device identity), email is secondary (user identity)
     const newIdentityMap = new IdentityMap();
-    const emailIdentity = new IdentityItem(inputEmail, AuthenticatedState.AUTHENTICATED, true);
-    const ecidIdentity = new IdentityItem(ecid, AuthenticatedState.AUTHENTICATED, false);
+    const emailIdentity = new IdentityItem(inputEmail, AuthenticatedState.AUTHENTICATED, false);
+    const ecidIdentity = new IdentityItem(ecid, AuthenticatedState.AUTHENTICATED, true);
     newIdentityMap.addItem(emailIdentity, 'Email');
     newIdentityMap.addItem(ecidIdentity, 'ECID');
 

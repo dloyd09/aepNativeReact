@@ -14,12 +14,16 @@ This is a **demo/bootcamp configuration app** designed for Adobe employees to co
 3. Tap **"Save App ID"** - this initializes the Adobe SDK
 4. ✅ **Success**: You should see "App ID saved and SDK configured successfully"
 
-#### **Step 2: Configure Consent Settings** 🔒
-1. Navigate to **"Consent"** screen
-2. Tap **"Set Default Consent - Yes"** to enable data collection
-3. Tap **"Set Collect Consent - Yes"** to set current user consent
-4. ✅ **Success**: Consent is now set to "Yes" for data collection
-5. ⚠️ **CRITICAL**: Consent must be set to "Yes" before testing Optimize features
+#### **Step 2: Consent Settings (Automatic)** 🔒
+✅ **Consent is automatically set to "Yes" when the SDK initializes** - no manual configuration needed!
+
+The app automatically configures:
+- Default Consent = Yes
+- Collect Consent = Yes
+
+This enables data collection for all Adobe features including Edge events, Optimize, and Messaging.
+
+*Note: The Consent screen in Technical View is still available if you need to manually change consent settings.*
 
 #### **Step 3: Set Up Adobe Assurance** 🔍
 1. Navigate to **"Assurance"** screen
@@ -462,4 +466,208 @@ All Adobe Experience Platform integration objectives achieved:
 - **XDM Analytics**: Full schema migration with tenant namespace
 - **Demo-Ready**: Easy configuration for Adobe employees and bootcamp participants
 - **Production-Ready**: Built, tested, and ready for deployment
+
+---
+
+## ⚙️ **Developer Configuration Reference**
+
+### **Hardcoded Default Values**
+
+For future developers who need to modify default configurations:
+
+#### **Decisioning Items (Code-Based Experiences)**
+
+**Default Surface:**
+- **Value**: `"edge-offers"`
+- **Location**: 
+  - `app/(consumerTabs)/decisioningItems.tsx` (line 38)
+  - `app/(techScreens)/DecisioningItemsView.tsx` (line 32)
+- **Usage**: Automatically set when users first access Decisioning Items
+- **To Change**: Update `DEFAULT_SURFACE` constant in both files
+
+**Preview URL:**
+- **Value**: `"com.cmtBootCamp.AEPSampleAppNewArchEnabled://decisioning-items"`
+- **Location**: 
+  - `app/(consumerTabs)/decisioningItems.tsx` (line 39)
+  - `app/(techScreens)/DecisioningItemsView.tsx` (line 29)
+- **Usage**: Deep link for on-device campaign previews in AJO
+- **To Change**: Update `PREVIEW_URL` or `DEFAULT_PREVIEW_URL` constant
+
+#### **Consent Settings**
+
+**Default Consent:**
+- **Value**: `{ val: 'y' }` (Yes)
+- **Location**: `src/utils/adobeConfig.ts` (lines 134-151)
+- **Usage**: Automatically set during SDK initialization
+- **To Change**: Modify the consent values in `configureAdobe()` function
+
+**Why Auto-Set?**
+- Simplifies bootcamp setup - no manual consent button pressing
+- Enables immediate data collection and event sending
+- Prevents Edge.sendEvent() from hanging while waiting for consent
+
+#### **Messaging Delegate**
+
+**Auto-Configuration:**
+- **Location**: `src/utils/adobeConfig.ts` (lines 157-170)
+- **Usage**: Automatically configured for in-app messages
+- **Callbacks**:
+  - `shouldShowMessage: () => true` - Always show messages
+  - `shouldSaveMessage: () => true` - Save messages for later
+- **To Change**: Modify the delegate configuration in `configureAdobe()` function
+
+#### **Deep Link Schemes**
+
+**App URL Schemes:**
+- **Primary**: `myapp://` (simplified)
+- **Full**: `com.cmtBootCamp.AEPSampleAppNewArchEnabled://`
+- **Location**: 
+  - `app.json` (line 8)
+  - `android/app/src/main/AndroidManifest.xml` (lines 29-30)
+- **Usage**: Deep linking for in-app messages and Assurance
+- **Routes**: `/home`, `/cart`, `/decisioningItems`, `/profile`, `/Checkout`
+
+### **Storage Keys Reference**
+
+Important AsyncStorage keys used throughout the app:
+
+- `@adobe_app_id` - Stored Adobe Launch App ID
+- `@decisioning_items_config` - Decisioning Items surface configuration
+- `@edge_offers_config` - Legacy key (migrated to @decisioning_items_config)
+- `@cart_session_id` - Persistent cart session identifier
+- `userProfile` - User profile data (firstName, email)
+
+### **Version Management (Android)**
+
+**Automatic Version Control:**
+
+The app uses a versioning system that reads from `android/version.properties`:
+
+```properties
+VERSION_CODE=1
+VERSION_NAME=1.0.1
+```
+
+**Available Commands:**
+
+```bash
+# Check current version
+cd android && ./gradlew currentVersion
+
+# Increment patch version (1.0.1 → 1.0.2)
+cd android && ./gradlew incrementVersion
+
+# Increment minor version (1.0.1 → 1.1.0)
+cd android && ./gradlew incrementMinor
+
+# Increment major version (1.0.1 → 2.0.0)
+cd android && ./gradlew incrementMajor
+```
+
+**What Gets Updated:**
+- ✅ `android/version.properties` (Android version)
+- ✅ `app.json` (Expo/iOS version)
+- Both files stay in sync automatically!
+
+**Typical Release Workflow:**
+
+```bash
+# 1. Increment version before building
+cd android && ./gradlew incrementVersion
+
+# 2. Build the release APK (version is automatically applied)
+./gradlew assembleRelease
+
+# 3. Output APK will be named with the new version:
+# android/app/build/outputs/apk/release/WeRetail-1.0.2-release.apk
+```
+
+**Version Components:**
+- **VERSION_CODE**: Integer that must increase with each release (used by Play Store)
+- **VERSION_NAME**: Human-readable version string (displayed to users)
+- Both increment automatically when you run version commands
+- Patch resets to 0 when minor increments, minor resets to 0 when major increments
+
+**Location:** `android/version.properties` (tracked in git)
+
+---
+
+## 🚀 **Building Android APK**
+
+### **Release Build Workflow**
+
+**Option 1: New Version Release** (Recommended)
+
+```bash
+# 1. Check current version
+cd android && ./gradlew currentVersion
+
+# 2. Increment version
+./gradlew incrementVersion        # 1.0.1 → 1.0.2
+# OR ./gradlew incrementMinor     # 1.0.1 → 1.1.0
+# OR ./gradlew incrementMajor     # 1.0.1 → 2.0.0
+
+# 3. Build release APK
+./gradlew assembleRelease
+```
+
+**Option 2: Build Without Version Change**
+
+```bash
+# Skip version increment, build with current version
+cd android && ./gradlew assembleRelease
+```
+
+**Quick Build (Increment + Build in one command):**
+
+```bash
+cd android && ./gradlew incrementVersion assembleRelease
+```
+
+### **APK Output Location**
+
+After building, your APK will be at:
+
+```
+android/app/build/outputs/apk/release/WeRetail-{version}-release.apk
+```
+
+Example: `WeRetail-1.0.2-release.apk`
+
+### **Troubleshooting Build Issues**
+
+If the build fails, clean and rebuild:
+
+```bash
+cd android && ./gradlew clean
+./gradlew assembleRelease
+```
+
+**Common Issues:**
+- **Build cache problems**: Run `./gradlew clean` first
+- **Out of memory**: Close other apps, try again
+- **Gradle daemon issues**: Run `./gradlew --stop` then rebuild
+- **Version not updating**: Make sure `android/version.properties` exists
+
+### **Debug Build (for testing)**
+
+For debug builds (faster, includes debug info):
+
+```bash
+cd android && ./gradlew assembleDebug
+# Output: android/app/build/outputs/apk/debug/WeRetail-{version}-debug.apk
+```
+
+### **Installing APK on Device**
+
+**Via ADB:**
+```bash
+adb install android/app/build/outputs/apk/release/WeRetail-1.0.2-release.apk
+```
+
+**Via File Transfer:**
+1. Copy APK to your device
+2. Open file manager on device
+3. Tap the APK file
+4. Allow installation from unknown sources if prompted
 

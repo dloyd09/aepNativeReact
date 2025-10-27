@@ -8,6 +8,7 @@ import { Assurance } from '@adobe/react-native-aepassurance';
 import { CartProvider } from '../components/CartContext';
 import { Image } from 'react-native';
 import { configureAdobe, getStoredAppId } from '../src/utils/adobeConfig';
+import * as Linking from 'expo-linking';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
 
@@ -42,6 +43,73 @@ export default function RootLayout() {
     
     // Hide the splash screen after the app is ready
     SplashScreen.hideAsync();
+    
+    // Set up push notification deep link handler
+    const setupPushHandling = async () => {
+      const { PushNotificationService } = await import('../src/utils/pushNotifications');
+      const pushService = PushNotificationService.getInstance();
+      
+      const responseListener = pushService.addNotificationResponseReceivedListener(response => {
+        console.log('📲 Push notification tapped:', response);
+        console.log('📲 Full notification object:', JSON.stringify(response, null, 2));
+        
+        // Extract the notification data
+        const data = response.notification.request.content.data;
+        console.log('Notification data:', data);
+        console.log('Notification data type:', typeof data);
+        console.log('Notification data keys:', data ? Object.keys(data) : 'N/A');
+        
+        // Check for Adobe deep link fields (handle both object and stringified)
+        let deepLinkData = data;
+        if (typeof data === 'string') {
+          try {
+            deepLinkData = JSON.parse(data);
+          } catch (e) {
+            console.error('Failed to parse notification data:', e);
+          }
+        }
+        
+        const deepLink = deepLinkData?.adb_uri || deepLinkData?.adb_deeplink || deepLinkData?.uri;
+        
+        if (deepLink) {
+          console.log('🔗 Deep link found:', deepLink);
+          
+          if (typeof deepLink === 'string') {
+            if (deepLink.startsWith('myapp://') || deepLink.startsWith('com.cmtBootCamp.AEPSampleAppNewArchEnabled://')) {
+              // Internal deep link
+              const path = deepLink.split('://')[1];
+              console.log('📱 Navigating to:', path);
+              
+              // Small delay to ensure app is ready
+              setTimeout(() => {
+                try {
+                  // Use Linking for more reliable deep link handling
+                  Linking.openURL(deepLink);
+                } catch (error) {
+                  console.error('Navigation error:', error);
+                }
+              }, 100);
+            } else if (deepLink.startsWith('http://') || deepLink.startsWith('https://')) {
+              // External URL
+              console.log('🌐 Opening external URL:', deepLink);
+              Linking.openURL(deepLink);
+            }
+          }
+        } else {
+          console.log('⚠️ No deep link found in notification data');
+        }
+      });
+      
+      return responseListener;
+    };
+    
+    let listener: any;
+    setupPushHandling().then(l => listener = l);
+    
+    // Cleanup
+    return () => {
+      listener?.remove();
+    };
   }, []);
 
   // Note: Page view tracking now handled by XDM events in individual consumer tabs

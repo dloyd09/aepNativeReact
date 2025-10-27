@@ -1,9 +1,11 @@
 /*
  * Adobe SDK Initialization Sequence:
- * 1. Set log level to DEBUG
+ * 1. Set log level to ERROR
  * 2. Initialize MobileCore with App ID
  * 3. Wait 1 second for initialization to complete
  * 4. Verify all extensions are ready
+ * 5. Set consent to "Yes" (default and collect)
+ * 6. Configure messaging delegate for in-app messages
  * 
  * IMPORTANT: Do not modify this sequence as it ensures proper initialization order
  * and prevents race conditions between MobileCore and extensions.
@@ -124,6 +126,76 @@ export const configureAdobe = async (appId: string) => {
       console.log('All Adobe extensions verified and ready');
     } catch (error) {
       console.error('Error verifying Adobe extensions:', error);
+    }
+    
+    // Automatically set consent to "Yes" for bootcamp/demo purposes
+    try {
+      console.log('Setting default consent to Yes...');
+      
+      // Set default consent
+      const defaultConsents = {
+        'consent.default': {
+          consents: {
+            collect: { val: 'y' }
+          }
+        }
+      };
+      await MobileCore.updateConfiguration(defaultConsents);
+      console.log('✅ Default consent set to Yes');
+      
+      // Set collect consent
+      const collectConsents = {
+        consents: {
+          collect: { val: 'y' }
+        }
+      };
+      await Consent.update(collectConsents);
+      console.log('✅ Collect consent set to Yes');
+      
+    } catch (error) {
+      console.error('Error setting consent:', error);
+    }
+    
+    // Set up messaging delegate for in-app messages
+    try {
+      console.log('Configuring messaging delegate...');
+      const { Linking } = require('react-native');
+      
+      Messaging.setMessagingDelegate({
+        onDismiss: msg => console.log('In-app message dismissed:', msg),
+        onShow: msg => console.log('In-app message shown:', msg),
+        shouldShowMessage: () => true,  // Always show messages
+        shouldSaveMessage: () => true,  // Save messages for later retrieval
+        urlLoaded: (url, message) => {
+          console.log('🔗 In-app message URL loaded:', url);
+          console.log('📨 In-app message data:', message);
+          
+          // Handle deep links from in-app messages
+          if (url && typeof url === 'string') {
+            if (url.startsWith('myapp://') || url.startsWith('com.cmtBootCamp.AEPSampleAppNewArchEnabled://')) {
+              // Internal deep link
+              console.log('📱 In-app message: Navigating to internal route:', url);
+              setTimeout(() => {
+                try {
+                  Linking.openURL(url);
+                } catch (error) {
+                  console.error('❌ In-app message navigation error:', error);
+                }
+              }, 100);
+            } else if (url.startsWith('http://') || url.startsWith('https://')) {
+              // External URL
+              console.log('🌐 In-app message: Opening external URL:', url);
+              Linking.openURL(url);
+            } else {
+              // Log unhandled URL format
+              console.log('⚠️ In-app message: Unhandled URL format:', url);
+            }
+          }
+        },
+      });
+      console.log('✅ Messaging delegate configured with deep link handling');
+    } catch (error) {
+      console.error('Error setting messaging delegate:', error);
     }
     
     console.log('Adobe SDK initialized successfully');

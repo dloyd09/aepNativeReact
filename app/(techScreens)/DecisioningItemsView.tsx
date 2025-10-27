@@ -28,6 +28,9 @@ const LEGACY_EDGE_OFFERS_CONFIG_KEY = '@edge_offers_config'; // For migration fr
 // Fixed preview URL for AJO code-based experiences
 const PREVIEW_URL = 'com.cmtBootCamp.AEPSampleAppNewArchEnabled://decisioning-items';
 
+// Default surface for bootcamp users
+const DEFAULT_SURFACE = 'edge-offers';
+
 interface DecisioningItemsConfig {
   surface: string;
   previewUrl: string; // Always set to PREVIEW_URL, kept for backwards compatibility
@@ -39,9 +42,9 @@ export default function DecisioningItemsView() {
   const backgroundColor = useThemeColor({}, 'background');
   const tintColor = useThemeColor({}, 'tint');
 
-  // Configuration state
+  // Configuration state - defaults to "edge-offers" for bootcamp users
   const [config, setConfig] = useState<DecisioningItemsConfig>({
-    surface: '',
+    surface: DEFAULT_SURFACE,
     previewUrl: PREVIEW_URL,
   });
 
@@ -75,9 +78,18 @@ export default function DecisioningItemsView() {
         const parsedConfig = JSON.parse(savedConfig);
         // Always use the fixed preview URL, ignore any saved value
         setConfig({
-          surface: parsedConfig.surface || '',
+          surface: parsedConfig.surface || DEFAULT_SURFACE,
           previewUrl: PREVIEW_URL
         });
+      } else {
+        // No saved config - auto-save the default for bootcamp users
+        const defaultConfig: DecisioningItemsConfig = {
+          surface: DEFAULT_SURFACE,
+          previewUrl: PREVIEW_URL
+        };
+        await AsyncStorage.setItem(DECISIONING_ITEMS_CONFIG_KEY, JSON.stringify(defaultConfig));
+        console.log('✅ Auto-saved default decisioning items config:', defaultConfig);
+        setConfig(defaultConfig);
       }
       setIsInitialized(true);
     } catch (error) {
@@ -136,15 +148,17 @@ export default function DecisioningItemsView() {
 
   const clearConfig = async () => {
     try {
-      await AsyncStorage.removeItem(DECISIONING_ITEMS_CONFIG_KEY);
-      setConfig({
-        surface: '',
-        previewUrl: PREVIEW_URL,
-      });
-      Alert.alert('Cleared', 'Decisioning Items configuration cleared');
+      // Reset to default config instead of clearing completely
+      const defaultConfig: DecisioningItemsConfig = {
+        surface: DEFAULT_SURFACE,
+        previewUrl: PREVIEW_URL
+      };
+      await AsyncStorage.setItem(DECISIONING_ITEMS_CONFIG_KEY, JSON.stringify(defaultConfig));
+      setConfig(defaultConfig);
+      Alert.alert('Reset to Default', `Decisioning Items configuration reset to default (surface: "${DEFAULT_SURFACE}")`);
     } catch (error) {
       console.error('🔴 Error clearing config:', error);
-      Alert.alert('Error', 'Failed to clear configuration');
+      Alert.alert('Error', 'Failed to reset configuration');
     }
   };
 
@@ -240,13 +254,14 @@ export default function DecisioningItemsView() {
       <View style={{ marginVertical: 10, backgroundColor: tintColor + '10', padding: 15, borderRadius: 5 }}>
         <ThemedText style={{ fontWeight: 'bold', marginBottom: 5 }}>Adobe Journey Optimizer Code-Based Experience</ThemedText>
         <ThemedText style={{ fontSize: 12, marginBottom: 3 }}>Configure surface location for AJO campaigns</ThemedText>
-        <ThemedText style={{ fontSize: 12 }}>• Surface: Where content appears in your app (e.g., 'decisioning-items')</ThemedText>
+        <ThemedText style={{ fontSize: 12 }}>• Surface: Where content appears in your app</ThemedText>
+        <ThemedText style={{ fontSize: 12, fontWeight: 'bold', color: '#4CAF50', marginTop: 5 }}>✅ Default set to: "edge-offers" for bootcamp users</ThemedText>
       </View>
 
       <View style={{ marginVertical: 15 }}>
         <ThemedText style={{ marginBottom: 5, fontWeight: 'bold' }}>Surface/Location *</ThemedText>
         <ThemedText style={{ fontSize: 12, marginBottom: 5, opacity: 0.7 }}>
-          Surface identifier for AJO campaigns. Simple names (e.g., 'decisioning-items') will be auto-converted to: @mobileapp://com.cmtBootCamp.AEPSampleAppNewArchEnabled/[surface-name]
+          Surface identifier for AJO campaigns (e.g., 'edge-offers', 'home-banner', 'product-recommendations')
         </ThemedText>
         <TextInput
           style={{
@@ -260,11 +275,11 @@ export default function DecisioningItemsView() {
           }}
           value={config.surface}
           onChangeText={(text) => updateField('surface', text)}
-          placeholder="e.g., decisioning-items"
+          placeholder="edge-offers (default)"
           placeholderTextColor={textColor + '80'}
         />
         
-        {/* Show the final URI that will be sent to Adobe */}
+        {/* Show note about surface naming */}
         {config.surface && (
           <View style={{ 
             backgroundColor: tintColor + '10', 
@@ -274,35 +289,9 @@ export default function DecisioningItemsView() {
             borderWidth: 1,
             borderColor: tintColor + '20'
           }}>
-            <ThemedText style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 3 }}>
-              Final surface URI sent to Adobe:
+            <ThemedText style={{ fontSize: 11, opacity: 0.8 }}>
+              💡 Use this exact surface name when creating campaigns in Adobe Journey Optimizer
             </ThemedText>
-            <ThemedText style={{ fontSize: 11, fontFamily: 'monospace', opacity: 0.8 }}>
-              {config.surface.includes('://') 
-                ? config.surface 
-                : `@mobileapp://com.cmtBootCamp.AEPSampleAppNewArchEnabled/${config.surface}`}
-            </ThemedText>
-            
-            {/* Button to convert to full URI format */}
-            {config.surface && !config.surface.includes('://') && (
-              <TouchableOpacity
-                style={{
-                  backgroundColor: tintColor + '30',
-                  padding: 6,
-                  borderRadius: 3,
-                  marginTop: 5,
-                  alignSelf: 'flex-start'
-                }}
-                onPress={() => {
-                  const fullUri = `@mobileapp://com.cmtBootCamp.AEPSampleAppNewArchEnabled/${config.surface}`;
-                  updateField('surface', fullUri);
-                }}
-              >
-                <ThemedText style={{ fontSize: 10, color: tintColor, fontWeight: 'bold' }}>
-                  Use Full URI Format
-                </ThemedText>
-              </TouchableOpacity>
-            )}
           </View>
         )}
       </View>
@@ -381,7 +370,7 @@ export default function DecisioningItemsView() {
           }}
           onPress={clearConfig}
         >
-          <ThemedText style={{ color: '#ff4444', fontWeight: 'bold' }}>Clear Configuration</ThemedText>
+          <ThemedText style={{ color: '#ff4444', fontWeight: 'bold' }}>Reset to Default (edge-offers)</ThemedText>
         </TouchableOpacity>
       </View>
 

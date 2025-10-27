@@ -357,7 +357,8 @@ export default function OffersTab() {
     try {
       const identityMap = new IdentityMap();
       if (profile.email) {
-        identityMap.addItem({ id: profile.email, authenticatedState: AuthenticatedState.AUTHENTICATED, primary: true }, 'Email');
+        // Email is secondary identity; ECID (set at SDK init) is primary
+        identityMap.addItem({ id: profile.email, authenticatedState: AuthenticatedState.AUTHENTICATED, primary: false }, 'Email');
       }
       await Identity.updateIdentities(identityMap);
     } catch (error) {

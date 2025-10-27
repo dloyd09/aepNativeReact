@@ -15,7 +15,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { View, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, Image, StyleSheet } from 'react-native';
+import { View, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, Image, StyleSheet, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MobileCore, LogLevel } from '@adobe/react-native-aepcore';
 import { Messaging, MessagingEdgeEventType } from '@adobe/react-native-aepmessaging';
@@ -29,10 +29,15 @@ import { useCallback } from 'react';
 import { useCart } from '@/components/CartContext';
 import { useCartSession } from '@/hooks/useCartSession';
 import { buildPageViewEvent, buildProductListAddEvent } from '@/src/utils/xdmEventBuilders';
+import { useRouter } from 'expo-router';
 
 // Storage key for Decisioning Items configuration
 const DECISIONING_ITEMS_CONFIG_KEY = '@decisioning_items_config';
 const LEGACY_EDGE_OFFERS_CONFIG_KEY = '@edge_offers_config'; // For migration from old key
+
+// Default surface for bootcamp users (matches Technical screen default)
+const DEFAULT_SURFACE = 'edge-offers';
+const DEFAULT_PREVIEW_URL = 'com.cmtBootCamp.AEPSampleAppNewArchEnabled://decisioning-items';
 
 interface DecisioningItemsConfig {
   surface: string;
@@ -120,17 +125,37 @@ interface DecisioningItemCardProps {
   addToCart: (item: DecisioningItem) => void;
   onLayout: (item: DecisioningItem) => void;
   isInCart: (name: string, category: string) => boolean;
+  handleCustomCTA: (item: DecisioningItem, url: string) => void;
 }
 
-const DecisioningItemCard = ({ item, index, colors, styles, addToCart, onLayout, isInCart }: DecisioningItemCardProps) => {
+const DecisioningItemCard = ({ item, index, colors, styles, addToCart, onLayout, isInCart, handleCustomCTA }: DecisioningItemCardProps) => {
   const content = parseItemContent(item);
   const itemName = content.title || 'Unnamed Offer';
   const itemCategory = content.badge || 'decisioning-items';
   const isAdded = isInCart(itemName, itemCategory);
   
-  const handleAddToCart = () => {
-    addToCart(item);
+  // Check if this offer has a custom CTA
+  const hasCustomCTA = content.ctaText && content.ctaUrl;
+  
+  const handleButtonPress = () => {
+    if (hasCustomCTA) {
+      // Use custom CTA URL
+      handleCustomCTA(item, content.ctaUrl!);
+    } else {
+      // Use standard add to cart
+      addToCart(item);
+    }
   };
+  
+  // Determine button text and state
+  const getButtonText = () => {
+    if (hasCustomCTA) {
+      return content.ctaText;
+    }
+    return isAdded ? 'Added to Cart' : 'Add to Cart';
+  };
+  
+  const isButtonDisabled = hasCustomCTA ? false : isAdded;
   
   return (
     <View
@@ -169,18 +194,18 @@ const DecisioningItemCard = ({ item, index, colors, styles, addToCart, onLayout,
         )}
         
         <TouchableOpacity 
-          onPress={handleAddToCart}
-          disabled={isAdded}
+          onPress={handleButtonPress}
+          disabled={isButtonDisabled}
           style={[
             styles.cardButton, 
             { 
-              backgroundColor: isAdded ? '#4CAF50' : colors.primary,
-              opacity: isAdded ? 0.8 : 1
+              backgroundColor: isAdded && !hasCustomCTA ? '#4CAF50' : colors.primary,
+              opacity: isButtonDisabled ? 0.8 : 1
             }
           ]}
         >
           <ThemedText style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>
-            {isAdded ? 'Added to Cart' : 'Add to Cart'}
+            {getButtonText()}
           </ThemedText>
         </TouchableOpacity>
       </View>
@@ -192,6 +217,7 @@ export default function DecisioningItemsTab() {
   const { colors } = useTheme();
   const { addToCart, isInCart } = useCart();
   const { cartSessionId, isLoading: isCartSessionLoading } = useCartSession();
+  const router = useRouter();
 
   const styles = StyleSheet.create({
     card: {
@@ -565,9 +591,15 @@ export default function DecisioningItemsTab() {
       }
       
       if (!savedConfig) {
-        setError('No Decisioning Items configuration found. Please configure in Technical View → Decisioning Items');
-        setIsLoading(false);
-        return;
+        // Auto-save default config for bootcamp users
+        console.log('No config found, auto-saving default config for bootcamp users');
+        const defaultConfig: DecisioningItemsConfig = {
+          surface: DEFAULT_SURFACE,
+          previewUrl: DEFAULT_PREVIEW_URL
+        };
+        await AsyncStorage.setItem(DECISIONING_ITEMS_CONFIG_KEY, JSON.stringify(defaultConfig));
+        console.log('✅ Auto-saved default decisioning items config:', defaultConfig);
+        savedConfig = JSON.stringify(defaultConfig);
       }
 
       const parsedConfig = JSON.parse(savedConfig);
@@ -582,9 +614,12 @@ export default function DecisioningItemsTab() {
 
       // Fetch items for the configured surface
       await fetchDecisioningItems(parsedConfig);
-    } catch (error) {
-      console.error('🔴 DecisioningItems: Error loading config or fetching items:', error);
-      setError('Failed to load configuration or fetch items');
+    } catch (error: any) {
+      // Don't show error if it's just "no campaigns available"
+      if (!error?.message?.includes('Unable to get Propositions')) {
+        console.error('🔴 DecisioningItems: Error loading config or fetching items:', error);
+        setError('Failed to load configuration or fetch items');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -594,6 +629,7 @@ export default function DecisioningItemsTab() {
   const getCachedDecisioningItems = async (configuration: DecisioningItemsConfig) => {
     try {
       const surface = configuration.surface;
+      console.log('🔍 Getting cached propositions for surface:', surface);
       const propositionsResult = await Messaging.getPropositionsForSurfaces([surface]);
       
       // Convert propositions result to array if needed
@@ -616,7 +652,12 @@ export default function DecisioningItemsTab() {
       }
       
     } catch (error: any) {
-      console.error('🔴 DecisioningItems: Error getting cached items:', error);
+      // "Unable to get Propositions" is normal when no campaigns are configured for this surface
+      if (error?.message?.includes('Unable to get Propositions')) {
+        console.log('ℹ️ No cached propositions found for surface (this is normal if no campaigns are active)');
+      } else {
+        console.error('🔴 DecisioningItems: Error getting cached items:', error);
+      }
       return [];
     }
   };
@@ -625,6 +666,7 @@ export default function DecisioningItemsTab() {
   const fetchDecisioningItemsFromServer = async (configuration: DecisioningItemsConfig) => {
     try {
       const surface = configuration.surface;
+      console.log('📡 Fetching propositions from server for surface:', surface);
 
       // Fetch propositions from server and cache them
       await Messaging.updatePropositionsForSurfaces([surface]);
@@ -652,6 +694,14 @@ export default function DecisioningItemsTab() {
       return extractedItems;
       
     } catch (error: any) {
+      // "Unable to get Propositions" is expected when no campaigns are configured
+      if (error?.message?.includes('Unable to get Propositions')) {
+        console.log('ℹ️ No propositions available from server (no active campaigns for this surface)');
+        setItems([]);
+        setError(null); // Clear any previous errors
+        return [];
+      }
+      
       console.error('🔴 DecisioningItems: Error fetching from server:', error);
       
       // Handle specific error types
@@ -681,6 +731,14 @@ export default function DecisioningItemsTab() {
       await fetchDecisioningItemsFromServer(configuration);
       
     } catch (error: any) {
+      // "Unable to get Propositions" is normal when no campaigns exist - don't treat as error
+      if (error?.message?.includes('Unable to get Propositions')) {
+        console.log('ℹ️ No campaigns configured for this surface yet');
+        setItems([]);
+        setError(null);
+        return;
+      }
+      
       console.error('🔴 DecisioningItems: Error in fetchDecisioningItems:', error);
       setItems([]);
       throw error;
@@ -893,6 +951,43 @@ export default function DecisioningItemsTab() {
     }
   };
 
+  const handleCustomCTA = async (item: DecisioningItem, url: string) => {
+    // Track the interaction
+    trackItemInteraction(item, 'click');
+    
+    const content = parseItemContent(item);
+    console.log('🔗 Custom CTA clicked:', {
+      title: content.title,
+      ctaText: content.ctaText,
+      url: url
+    });
+    
+    try {
+      // Check if it's an internal deep link or external URL
+      if (url.startsWith('myapp://') || url.startsWith('com.cmtBootCamp.AEPSampleAppNewArchEnabled://')) {
+        // Internal deep link - use router
+        const path = url.split('://')[1]; // Extract path after scheme
+        console.log('📱 Navigating to internal route:', path);
+        router.push(`/${path}` as any);
+      } else if (url.startsWith('http://') || url.startsWith('https://')) {
+        // External URL - open in browser
+        console.log('🌐 Opening external URL:', url);
+        const supported = await Linking.canOpenURL(url);
+        if (supported) {
+          await Linking.openURL(url);
+        } else {
+          console.error('Cannot open URL:', url);
+        }
+      } else {
+        // Treat as internal path
+        console.log('📱 Navigating to path:', url);
+        router.push(url as any);
+      }
+    } catch (error) {
+      console.error('❌ Error handling custom CTA:', error);
+    }
+  };
+
   const renderItem = (item: DecisioningItem, index: number) => {
     return (
       <DecisioningItemCard
@@ -903,6 +998,7 @@ export default function DecisioningItemsTab() {
         addToCart={handleAddToCart}
         onLayout={trackItemDisplay}
         isInCart={isInCart}
+        handleCustomCTA={handleCustomCTA}
       />
     );
   };
@@ -946,12 +1042,26 @@ export default function DecisioningItemsTab() {
         📭 No Items Available
       </ThemedText>
       <ThemedText style={styles.emptyMessage}>
-        No personalized items found for the configured surface.
+        No decisioning items found for this surface.
       </ThemedText>
       {config && (
-        <ThemedText style={styles.emptyHint}>
-          Surface: {config.surface}
-        </ThemedText>
+        <>
+          <ThemedText style={styles.emptyHint}>
+            Surface: {config.surface}
+          </ThemedText>
+          <ThemedText style={[styles.emptyHint, { marginTop: 10, fontWeight: 'bold' }]}>
+            To display items:
+          </ThemedText>
+          <ThemedText style={[styles.emptyHint, { marginTop: 5 }]}>
+            1. Create a Code-Based Experience campaign in Adobe Journey Optimizer
+          </ThemedText>
+          <ThemedText style={[styles.emptyHint, { marginTop: 2 }]}>
+            2. Set the surface to: {config.surface}
+          </ThemedText>
+          <ThemedText style={[styles.emptyHint, { marginTop: 2 }]}>
+            3. Publish the campaign
+          </ThemedText>
+        </>
       )}
       <TouchableOpacity
         style={[styles.refreshButton, { backgroundColor: colors.primary }]}
@@ -982,12 +1092,14 @@ export default function DecisioningItemsTab() {
       return renderConfigError();
     }
 
-    if (isLoading) {
+    // Only show center loading indicator on initial load (never loaded before)
+    // For subsequent refreshes, use the pull-to-refresh spinner only
+    if (isLoading && lastUpdated === null) {
       return (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <ThemedText style={styles.loadingText}>
-            {items.length > 0 ? 'Refreshing personalized items...' : 'Fetching personalized items...'}
+            Fetching personalized items...
           </ThemedText>
         </View>
       );

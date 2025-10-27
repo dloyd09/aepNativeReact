@@ -104,6 +104,25 @@ def enableProguardInReleaseBuilds = (findProperty('android.enableProguardInRelea
  */
 def jscFlavor = 'org.webkit:android-jsc:+'
 
+// Auto-versioning system
+def versionPropsFile = file('../version.properties')
+def versionProps = new Properties()
+
+if (versionPropsFile.exists()) {
+    versionProps.load(new FileInputStream(versionPropsFile))
+} else {
+    versionProps['VERSION_CODE'] = "1"
+    versionProps['VERSION_NAME'] = "1.0.1"
+}
+
+def getVersionCode = { ->
+    return versionProps['VERSION_CODE'].toInteger()
+}
+
+def getVersionName = { ->
+    return versionProps['VERSION_NAME']
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
 
@@ -115,8 +134,8 @@ android {
         applicationId 'com.cmtBootCamp.AEPSampleAppNewArchEnabled'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.1"
+        versionCode getVersionCode()
+        versionName getVersionName()
     }
     signingConfigs {
         debug {
@@ -208,4 +227,113 @@ dependencies {
 if (rnVersion < versionToNumber(0, 75, 0)) {
     apply from: new File(["node", "--print", "require.resolve('@react-native-community/cli-platform-android/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim(), "../native_modules.gradle");
     applyNativeModulesAppBuildGradle(project)
+}
+
+// Helper function to update app.json version
+def updateAppJson(String newVersion) {
+    def appJsonFile = file('../../app.json')
+    def appJsonText = appJsonFile.text
+    def updatedText = appJsonText.replaceAll(/"version":\s*"[^"]*"/, "\"version\": \"${newVersion}\"")
+    appJsonFile.write(updatedText)
+    println "   Updated app.json to version ${newVersion}"
+}
+
+// Version increment tasks
+task incrementVersion {
+    description = 'Increments the patch version (1.0.1 → 1.0.2)'
+    group = 'versioning'
+    doLast {
+        def versionFile = file('../version.properties')
+        def props = new Properties()
+        props.load(new FileInputStream(versionFile))
+        
+        def versionCode = props['VERSION_CODE'].toInteger() + 1
+        def versionName = props['VERSION_NAME']
+        def (major, minor, patch) = versionName.tokenize('.').collect { it.toInteger() }
+        
+        patch++
+        def newVersion = "${major}.${minor}.${patch}"
+        
+        props['VERSION_CODE'] = String.valueOf(versionCode)
+        props['VERSION_NAME'] = String.valueOf(newVersion)
+        versionFile.withWriter { writer ->
+            props.store(writer, "Auto-incremented by gradle task")
+        }
+        
+        // Also update app.json
+        updateAppJson(newVersion)
+        
+        println "✅ Version incremented to ${newVersion} (code: ${versionCode})"
+    }
+}
+
+task incrementMinor {
+    description = 'Increments the minor version (1.0.1 → 1.1.0)'
+    group = 'versioning'
+    doLast {
+        def versionFile = file('../version.properties')
+        def props = new Properties()
+        props.load(new FileInputStream(versionFile))
+        
+        def versionCode = props['VERSION_CODE'].toInteger() + 1
+        def versionName = props['VERSION_NAME']
+        def (major, minor, patch) = versionName.tokenize('.').collect { it.toInteger() }
+        
+        minor++
+        patch = 0
+        def newVersion = "${major}.${minor}.${patch}"
+        
+        props['VERSION_CODE'] = String.valueOf(versionCode)
+        props['VERSION_NAME'] = String.valueOf(newVersion)
+        versionFile.withWriter { writer ->
+            props.store(writer, "Auto-incremented by gradle task")
+        }
+        
+        // Also update app.json
+        updateAppJson(newVersion)
+        
+        println "✅ Version incremented to ${newVersion} (code: ${versionCode})"
+    }
+}
+
+task incrementMajor {
+    description = 'Increments the major version (1.0.1 → 2.0.0)'
+    group = 'versioning'
+    doLast {
+        def versionFile = file('../version.properties')
+        def props = new Properties()
+        props.load(new FileInputStream(versionFile))
+        
+        def versionCode = props['VERSION_CODE'].toInteger() + 1
+        def versionName = props['VERSION_NAME']
+        def (major, minor, patch) = versionName.tokenize('.').collect { it.toInteger() }
+        
+        major++
+        minor = 0
+        patch = 0
+        def newVersion = "${major}.${minor}.${patch}"
+        
+        props['VERSION_CODE'] = String.valueOf(versionCode)
+        props['VERSION_NAME'] = String.valueOf(newVersion)
+        versionFile.withWriter { writer ->
+            props.store(writer, "Auto-incremented by gradle task")
+        }
+        
+        // Also update app.json
+        updateAppJson(newVersion)
+        
+        println "✅ Version incremented to ${newVersion} (code: ${versionCode})"
+    }
+}
+
+task currentVersion {
+    description = 'Displays the current version'
+    group = 'versioning'
+    doLast {
+        def versionFile = file('../version.properties')
+        def props = new Properties()
+        props.load(new FileInputStream(versionFile))
+        
+        println "Current version: ${props['VERSION_NAME']} (code: ${props['VERSION_CODE']})"
+    }
 }
