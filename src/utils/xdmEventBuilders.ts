@@ -595,41 +595,57 @@ export const buildProductInteractionEvent = async (
     commerceField.productListUpdates = { value: 1 };
   }
 
-  const event: any = {
-    xdm: {
-      eventType,
-      timestamp: new Date().toISOString(),
-      identityMap: params.identityMap,
-      
-      _adobecmteas: {
-        identities,
-        authentication: {
-          loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
-        },
-        channelInfo: {
-          channel: 'Mobile App'
-        }
-      },
-      
-      commerce: commerceField,
-      
-      web: {
-        webInteraction: {
-          _adobecmteas: {
-            engagement: {
-              transactionType: params.transactionType
-            }
-          }
-        }
-      },
-      
-      productListItems: params.cartSessionId 
-        ? formatProductListItems(params.productListItems, params.cartSessionId)
-        : params.productListItems
+  // Build tenant data
+  const tenantData: any = {
+    authentication: {
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
+    },
+    visitorDetails: {
+      visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
+    },
+    channelInfo: {
+      channel: 'Mobile App',
+      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
     }
   };
 
-  return event;
+  // Only add identities if we have data
+  if (identities && Object.keys(identities).length > 0) {
+    tenantData.identities = identities;
+  }
+
+  // Generate unique event ID (required by ExperienceEvent schema)
+  const eventId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+
+  const xdmData: any = {
+    _id: eventId,  // Required field
+    eventType,
+    timestamp: new Date().toISOString(),
+    identityMap: params.identityMap,
+    
+    _adobecmteas: tenantData,
+    
+    environment: buildEnvironment(),  // Device/platform context
+    
+    commerce: commerceField,
+    
+    web: {
+      webInteraction: {
+        _adobecmteas: {
+          engagement: {
+            transactionType: params.transactionType
+          }
+        }
+      }
+    },
+    
+    productListItems: params.cartSessionId 
+      ? formatProductListItems(params.productListItems, params.cartSessionId)
+      : params.productListItems
+  };
+
+  // Return ExperienceEvent instance (required by Adobe SDK)
+  return new ExperienceEvent({ xdmData });
 };
 
 /**

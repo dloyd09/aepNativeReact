@@ -19,7 +19,7 @@ import { View, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, Im
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MobileCore, LogLevel } from '@adobe/react-native-aepcore';
 import { Messaging, MessagingEdgeEventType } from '@adobe/react-native-aepmessaging';
-import { Edge } from '@adobe/react-native-aepedge';
+import { Edge, ExperienceEvent } from '@adobe/react-native-aepedge';
 import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -104,8 +104,8 @@ const parseItemContent = (item: DecisioningItem): ParsedContent => {
     subtitle: extractValue(parsedContent, ['subtitle', 'subheader', 'subheading', 'tagline']),
     description: extractValue(parsedContent, ['description', 'body', 'text', 'content', 'message']),
     image: extractValue(parsedContent, ['image', 'imageUrl', 'img', 'picture', 'photo']),
-    ctaText: extractValue(parsedContent, ['ctaText', 'buttonText', 'linkText', 'actionText', 'cta']),
-    ctaUrl: extractValue(parsedContent, ['ctaUrl', 'buttonUrl', 'linkUrl', 'actionUrl', 'url', 'link']),
+    ctaText: extractValue(parsedContent, ['cta-text', 'ctaText', 'buttonText', 'linkText', 'actionText', 'cta']),
+    ctaUrl: extractValue(parsedContent, ['url', 'cta-url', 'ctaUrl', 'buttonUrl', 'linkUrl', 'actionUrl', 'link']),
     price: extractValue(parsedContent, ['price', 'cost', 'amount', 'value']),
     discount: extractValue(parsedContent, ['discount', 'savings', 'offer', 'deal']),
     badge: extractValue(parsedContent, ['classification', 'badge', 'tag', 'label', 'category']),
@@ -749,8 +749,22 @@ export default function DecisioningItemsTab() {
   const processPropositions = (propositions: any[]): DecisioningItem[] => {
     const items: DecisioningItem[] = [];
     
+    console.log('🔄 Processing propositions:', propositions.length);
+    
     propositions.forEach((proposition, index) => {
+      console.log(`📦 Proposition ${index}:`, {
+        id: proposition.id,
+        scope: proposition.scope,
+        itemsCount: proposition.items?.length
+      });
+      
       proposition.items.forEach((item: any, itemIndex: number) => {
+        console.log(`  📄 Item ${itemIndex}:`, {
+          id: item.id,
+          schema: item.schema,
+          hasTrackMethod: typeof item.track === 'function'
+        });
+        
         const content = item.data?.content || item.data;
         
         // If content is a string, try to parse it
@@ -787,6 +801,13 @@ export default function DecisioningItemsTab() {
               // Use the actual item ID from Adobe instead of creating derived ones
               const itemId = offer.id || offer.itemID || `fallback_${Date.now()}_${offerIndex}`;
               const trackingToken = offer['data-item-token'] || offer.trackingToken;
+              
+              console.log(`    🎯 Embedded offer ${offerIndex}:`, {
+                itemId,
+                trackingToken,
+                hasParentTrack: typeof item.track === 'function',
+                offerName: offer.name || offer.title
+              });
               
               items.push({
                 id: itemId,
@@ -840,54 +861,150 @@ export default function DecisioningItemsTab() {
     return items;
   };
 
-  // Track item display - Following Adobe's official tutorial for embedded decisions
-  const trackItemDisplay = (item: DecisioningItem) => {
+  // Track item display - Manual tracking via Edge.sendEvent() when .track() method is unavailable
+  const trackItemDisplay = async (item: DecisioningItem) => {
     try {
-      // According to Adobe's tutorial for embedded decisions:
-      // "Since the embedded items are located inside a single PropositionItem data, 
-      // the app developer will need to extract the data-item-token when tracking"
-      // https://developer.adobe.com/client-sdks/edge/adobe-journey-optimizer/code-based/tutorial/
+      const content = parseItemContent(item);
+      console.log('👁️ trackItemDisplay called:', {
+        itemId: item.id,
+        itemName: content.title,
+        isEmbeddedItem: item.isEmbeddedItem,
+        trackingToken: item.trackingToken,
+        hasPropositionItem: !!item.propositionItem,
+        hasTrackMethod: typeof item.propositionItem?.track === 'function'
+      });
       
+      // Try native track method first (for SDK objects that support it)
       if (item.propositionItem && typeof item.propositionItem.track === 'function') {
         if (item.trackingToken && item.isEmbeddedItem) {
-          // For embedded items, track with token using the parent PropositionItem
+          console.log('📤 Tracking DISPLAY (native embedded) with token:', item.trackingToken);
           item.propositionItem.track(null, MessagingEdgeEventType.DISPLAY, [item.trackingToken]);
+          console.log('✅ DISPLAY tracking sent (native embedded)');
         } else {
-          // For regular items or when no token available
+          console.log('📤 Tracking DISPLAY (native regular)');
           item.propositionItem.track(null, MessagingEdgeEventType.DISPLAY);
+          console.log('✅ DISPLAY tracking sent (native regular)');
         }
-      } 
+      } else {
+        // Fallback: Manual tracking via Edge.sendEvent()
+        console.log('📤 Using manual Edge.sendEvent() tracking for DISPLAY');
+        
+        const xdmData: any = {
+          eventType: 'decisioning.propositionDisplay',
+          _experience: {
+            decisioning: {
+              propositions: [
+                {
+                  id: item.proposition.id,
+                  scope: item.surface || item.proposition.scope,
+                  scopeDetails: {
+                    ...item.proposition.scopeDetails
+                  }
+                }
+              ]
+            }
+          }
+        };
+        
+        // Add tracking token for embedded items
+        if (item.trackingToken && item.isEmbeddedItem) {
+          console.log('  Including tracking token:', item.trackingToken);
+          xdmData._experience.decisioning.propositions[0].items = [
+            {
+              id: item.propositionItem.id,
+              trackingToken: item.trackingToken
+            }
+          ];
+        }
+        
+        const experienceEvent = new ExperienceEvent({ xdmData });
+        await Edge.sendEvent(experienceEvent);
+        console.log('✅ DISPLAY tracking sent (manual) for:', content.title);
+      }
     } catch (error) {
       console.error('🔴 DecisioningItems: Error tracking display:', error);
     }
   };
 
-  // Track item interaction - Following Adobe's official tutorial for embedded decisions
-  const trackItemInteraction = (item: DecisioningItem, interaction: string) => {
+  // Track item interaction - Manual tracking via Edge.sendEvent() when .track() method is unavailable
+  const trackItemInteraction = async (item: DecisioningItem, interaction: string) => {
     try {
-      // According to Adobe's tutorial for embedded decisions:
-      // Track interactions through the parent PropositionItem with tokens
-      // https://developer.adobe.com/client-sdks/edge/adobe-journey-optimizer/code-based/tutorial/
+      const content = parseItemContent(item);
+      console.log(`🖱️ trackItemInteraction called (${interaction}):`, {
+        itemId: item.id,
+        itemName: content.title,
+        interaction,
+        isEmbeddedItem: item.isEmbeddedItem,
+        trackingToken: item.trackingToken,
+        hasPropositionItem: !!item.propositionItem,
+        hasTrackMethod: typeof item.propositionItem?.track === 'function'
+      });
       
+      // Try native track method first (for SDK objects that support it)
       if (item.propositionItem && typeof item.propositionItem.track === 'function') {
         if (item.trackingToken && item.isEmbeddedItem) {
-          // For embedded items, track with token using the parent PropositionItem
+          console.log(`📤 Tracking INTERACT (native embedded) - ${interaction} with token:`, item.trackingToken);
           item.propositionItem.track(interaction, MessagingEdgeEventType.INTERACT, [item.trackingToken]);
+          console.log(`✅ INTERACT tracking sent (native embedded) - ${interaction}`);
         } else {
-          // For regular items or when no token available
+          console.log(`📤 Tracking INTERACT (native regular) - ${interaction}`);
           item.propositionItem.track(interaction, MessagingEdgeEventType.INTERACT);
+          console.log(`✅ INTERACT tracking sent (native regular) - ${interaction}`);
         }
-      } 
+      } else {
+        // Fallback: Manual tracking via Edge.sendEvent()
+        console.log(`📤 Using manual Edge.sendEvent() tracking for INTERACT - ${interaction}`);
+        
+        const xdmData: any = {
+          eventType: 'decisioning.propositionInteract',
+          _experience: {
+            decisioning: {
+              propositions: [
+                {
+                  id: item.proposition.id,
+                  scope: item.surface || item.proposition.scope,
+                  scopeDetails: {
+                    ...item.proposition.scopeDetails
+                  }
+                }
+              ]
+            }
+          }
+        };
+        
+        // Add tracking token and interaction label for embedded items
+        if (item.trackingToken && item.isEmbeddedItem) {
+          console.log('  Including tracking token:', item.trackingToken);
+          xdmData._experience.decisioning.propositions[0].items = [
+            {
+              id: item.propositionItem.id,
+              trackingToken: item.trackingToken
+            }
+          ];
+        }
+        
+        // Add interaction label if provided
+        if (interaction) {
+          xdmData._experience.decisioning.propositionAction = {
+            label: interaction
+          };
+        }
+        
+        const experienceEvent = new ExperienceEvent({ xdmData });
+        await Edge.sendEvent(experienceEvent);
+        console.log(`✅ INTERACT tracking sent (manual) - ${interaction} for:`, content.title);
+      }
     } catch (error) {
       console.error('🔴 DecisioningItems: Error tracking interaction:', error);
     }
   };
 
   const handleAddToCart = async (item: DecisioningItem) => {
-    // Track the interaction using Adobe's recommended "click" interaction for propositions
-    trackItemInteraction(item, 'click');
-    
     const content = parseItemContent(item);
+    console.log('🛒 handleAddToCart called for:', content.title);
+    
+    // Track the interaction using Adobe's recommended "click" interaction for propositions
+    await trackItemInteraction(item, 'click');
 
     // Add to cart context first
     addToCart({
@@ -952,15 +1069,15 @@ export default function DecisioningItemsTab() {
   };
 
   const handleCustomCTA = async (item: DecisioningItem, url: string) => {
-    // Track the interaction
-    trackItemInteraction(item, 'click');
-    
     const content = parseItemContent(item);
-    console.log('🔗 Custom CTA clicked:', {
+    console.log('🔗 handleCustomCTA called:', {
       title: content.title,
       ctaText: content.ctaText,
       url: url
     });
+    
+    // Track the interaction
+    await trackItemInteraction(item, 'click');
     
     try {
       // Check if it's an internal deep link or external URL

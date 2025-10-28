@@ -198,10 +198,72 @@ export const configureAdobe = async (appId: string) => {
       console.error('Error setting messaging delegate:', error);
     }
     
+    // Log in-app message response after initialization
+    try {
+      console.log('🔍 Checking for in-app messages...');
+      
+      // Trigger a refresh to see what comes back
+      await Messaging.refreshInAppMessages();
+      console.log('✅ In-app message refresh completed');
+      
+      // Wait a moment for messages to be processed
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Try to get any cached messages (this won't show much, but worth trying)
+      console.log('📬 Checking message cache...');
+      
+    } catch (error) {
+      console.log('⚠️ In-app message check completed with status:', error);
+      // Note: This might not be an error - could just mean no messages available
+    }
+    
     console.log('Adobe SDK initialized successfully');
   } catch (error) {
     console.error('Error configuring Adobe SDK:', error);
     throw error;
+  }
+};
+
+/**
+ * Debug function to check in-app message responses
+ * Call this from any screen to see what messages are available
+ */
+export const debugInAppMessages = async (): Promise<void> => {
+  try {
+    console.log('═══════════════════════════════════════');
+    console.log('🔍 DEBUG: Checking In-App Messages');
+    console.log('═══════════════════════════════════════');
+    
+    // Get current ECID
+    const ecid = await Identity.getExperienceCloudId();
+    console.log('📱 Current ECID:', ecid);
+    
+    // Get identity map
+    const identities = await Identity.getIdentities();
+    console.log('🆔 Identity Map:', JSON.stringify(identities, null, 2));
+    
+    // Refresh messages from server
+    console.log('📡 Refreshing in-app messages from server...');
+    await Messaging.refreshInAppMessages();
+    console.log('✅ Refresh completed');
+    
+    // Wait for processing
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    console.log('═══════════════════════════════════════');
+    console.log('📬 In-App Message Check Complete');
+    console.log('═══════════════════════════════════════');
+    console.log('');
+    console.log('What to look for in Assurance:');
+    console.log('1. "Retrieve message definitions" request');
+    console.log('2. Edge Network response with handle type "personalization:decisions"');
+    console.log('3. If no campaigns: empty response or no response event');
+    console.log('');
+    console.log('Expected surface: mobileapp://com.cmtBootCamp.AEPSampleAppNewArchEnabled');
+    console.log('═══════════════════════════════════════');
+    
+  } catch (error) {
+    console.error('❌ Error in debugInAppMessages:', error);
   }
 };
 

@@ -436,6 +436,52 @@ Migrated all consumer-facing analytics from legacy `MobileCore.trackState/trackA
 ### **🎯 Result:**
 Clean, schema-compliant XDM events flowing to Adobe Experience Platform Edge Network. All consumer interactions tracked with proper tenant namespace, identity stitching, and commerce funnel analytics.
 
+### **📝 Using XDM Events in Your Code:**
+
+**IMPORTANT**: All XDM events **MUST** use the event builder functions from `src/utils/xdmEventBuilders.ts` and be wrapped in `ExperienceEvent` instances.
+
+**✅ Correct Pattern:**
+```typescript
+import { Edge, ExperienceEvent } from '@adobe/react-native-aepedge';
+import { buildPageViewEvent } from '@/src/utils/xdmEventBuilders';
+
+// Build event using helper function (returns ExperienceEvent instance)
+const pageViewEvent = await buildPageViewEvent({
+  identityMap,
+  profile: currentProfile,
+  pageTitle: 'Home',
+  pagePath: '/home',
+  pageType: 'home'
+});
+
+// Send to Edge Network
+await Edge.sendEvent(pageViewEvent);
+```
+
+**❌ Incorrect Pattern (causes Assurance errors):**
+```typescript
+// DON'T create plain objects - this breaks Edge Network tracking
+const event = {
+  xdm: { eventType: 'pageView', ... }
+};
+await Edge.sendEvent(event); // ❌ Missing ExperienceEvent wrapper
+```
+
+**Available Event Builders:**
+- `buildPageViewEvent()` - Page/screen views
+- `buildProductViewEvent()` - Product detail views
+- `buildProductListAddEvent()` - Add to cart
+- `buildProductRemovalEvent()` - Remove from cart
+- `buildCheckoutEvent()` - Checkout initiation
+- `buildPurchaseEvent()` - Order completion
+- `buildLoginEvent()` / `buildLogoutEvent()` - Authentication
+
+**Why This Matters:**
+- `ExperienceEvent` wrapper ensures proper Edge Network Hit tracking
+- Event builders guarantee schema compliance with `_adobecmteas` tenant namespace
+- Consistent structure prevents Assurance validation errors
+- All required XDM fields (`_id`, `timestamp`, `environment`) are automatically included
+
 ---
 
 ## 🎉 **Project Status**

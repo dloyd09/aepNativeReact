@@ -9,6 +9,7 @@ import { CartProvider } from '../components/CartContext';
 import { Image } from 'react-native';
 import { configureAdobe, getStoredAppId } from '../src/utils/adobeConfig';
 import * as Linking from 'expo-linking';
+import Constants from 'expo-constants';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
 
@@ -22,6 +23,18 @@ export default function RootLayout() {
   const isDark = scheme === 'dark';
 
   useEffect(() => {
+    // Log app version at launch
+    console.log('═══════════════════════════════════════');
+    console.log('📱 APP VERSION CHECK');
+    console.log('═══════════════════════════════════════');
+    console.log('Version from Constants.expoConfig:', Constants.expoConfig?.version);
+    console.log('Version from Constants.manifest:', Constants.manifest?.version);
+    console.log('Version from Constants.manifest2:', Constants.manifest2?.extra?.expoClient?.version);
+    console.log('App Name:', Constants.expoConfig?.name);
+    console.log('Bundle ID (iOS):', Constants.expoConfig?.ios?.bundleIdentifier);
+    console.log('Package (Android):', Constants.expoConfig?.android?.package);
+    console.log('═══════════════════════════════════════');
+    
     // Initialize Adobe SDK
     const initAdobe = async () => {
       try {

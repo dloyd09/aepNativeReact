@@ -38,7 +38,7 @@ import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
 import { useTheme } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getStoredAppId, debugAdobeConfiguration } from '@/src/utils/adobeConfig';
+import { getStoredAppId, debugAdobeConfiguration, debugInAppMessages } from '@/src/utils/adobeConfig';
 
 const ASSURANCE_URL_KEY = '@adobe_assurance_url';
 
@@ -559,6 +559,18 @@ const AssuranceView = () => {
         <Button 
           title="🔍 Compare Session IDs" 
           onPress={debugSessionComparison}
+        />
+        <View style={{ marginTop: 10 }} />
+        <Button 
+          title="📬 Debug In-App Messages" 
+          onPress={async () => {
+            console.log('🔘 Debug In-App Messages button pressed');
+            await debugInAppMessages();
+            Alert.alert(
+              'In-App Message Check',
+              'Check your console/logcat for detailed in-app message information.\n\nThen check Assurance for:\n• "Retrieve message definitions" request\n• Edge response with personalization data\n• Empty response if no campaigns exist'
+            );
+          }}
         />
         
         {debugInfo ? (
