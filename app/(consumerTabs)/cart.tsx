@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
 import { View, FlatList, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect, useTheme, useNavigation } from '@react-navigation/native';
 import { Edge } from '@adobe/react-native-aepedge';
@@ -58,6 +59,7 @@ export default function CartTab() {
   const { cart, incrementQuantity, decrementQuantity, removeFromCart, addToCart } = useCart();
   const { cartSessionId, isLoading: isCartSessionLoading } = useCartSession();
   const { profile, setProfile: saveProfile } = useProfileStorage();
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   // Memoize modifiedCart to prevent infinite re-renders in useFocusEffect
   const modifiedCart = useMemo(() => 
@@ -174,9 +176,10 @@ export default function CartTab() {
   );
 
   return (
-    <ThemedView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-      <Ionicons name="cart" size={48} color="#007AFF" />
-      <ThemedText style={{ fontSize: 24, marginTop: 12, marginBottom: 24 }}>Cart</ThemedText>
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+      <ThemedView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+        <Ionicons name="cart" size={48} color="#007AFF" />
+        <ThemedText style={{ fontSize: 24, marginTop: 12, marginBottom: 24 }}>Cart</ThemedText>
       {cart.length === 0 ? (
         <ThemedText style={{ fontSize: 18, opacity: 0.7 }}>Your cart is empty.</ThemedText>
       ) : (
@@ -215,32 +218,44 @@ export default function CartTab() {
           />
           <ThemedText style={{ fontSize: 18, fontWeight: 'bold', marginTop: 16 }}>Total: ${modifiedCart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2)}</ThemedText>
           <TouchableOpacity 
-            style={{ marginTop: 16, paddingVertical: 12, paddingHorizontal: 32, backgroundColor: colors.primary, borderRadius: 8 }} 
+            style={{ 
+              marginTop: 16, 
+              paddingVertical: 12, 
+              paddingHorizontal: 32, 
+              backgroundColor: isCheckingOut ? colors.border : colors.primary, 
+              borderRadius: 8,
+              opacity: isCheckingOut ? 0.6 : 1
+            }} 
             onPress={async () => {
-              if (!cartSessionId) {
-                console.warn('Cart session not ready for checkout');
-                navigation.navigate('Checkout');
-                return;
-              }
-
-              if (!identityMap || Object.keys(identityMap).length === 0) {
-                console.warn('IdentityMap not ready for checkout');
-                navigation.navigate('Checkout');
-                return;
-              }
-
-              // Get fresh profile from AsyncStorage before sending event
-              let currentProfile = { firstName: '', email: '' };
+              if (isCheckingOut) return; // Prevent double-clicks
+              setIsCheckingOut(true); // Show loading state
+              
               try {
-                const storedProfile = await AsyncStorage.getItem('userProfile');
-                if (storedProfile) {
-                  currentProfile = JSON.parse(storedProfile);
+                if (!cartSessionId) {
+                  console.warn('Cart session not ready for checkout');
+                  setIsCheckingOut(false); // Reset flag before early return
+                  navigation.navigate('Checkout');
+                  return;
                 }
-              } catch (error) {
-                console.error('Failed to read profile for checkout:', error);
-              }
 
-              try {
+                if (!identityMap || Object.keys(identityMap).length === 0) {
+                  console.warn('IdentityMap not ready for checkout');
+                  setIsCheckingOut(false); // Reset flag before early return
+                  navigation.navigate('Checkout');
+                  return;
+                }
+
+                // Get fresh profile from AsyncStorage before sending event
+                let currentProfile = { firstName: '', email: '' };
+                try {
+                  const storedProfile = await AsyncStorage.getItem('userProfile');
+                  if (storedProfile) {
+                    currentProfile = JSON.parse(storedProfile);
+                  }
+                } catch (error) {
+                  console.error('Failed to read profile for checkout:', error);
+                }
+
                 const checkoutEvent = await buildCheckoutEvent({
                   identityMap,
                   profile: currentProfile,
@@ -265,13 +280,19 @@ export default function CartTab() {
                 console.error('Event that failed:', JSON.stringify({identityMap, currentProfile, cartSessionId}));
                 // Still navigate even if tracking fails
                 navigation.navigate('Checkout');
+              } finally {
+                setIsCheckingOut(false); // Reset loading state
               }
             }}
+            disabled={isCheckingOut}
           >
-            <ThemedText style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>Checkout</ThemedText>
+            <ThemedText style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>
+              {isCheckingOut ? 'Processing...' : 'Checkout'}
+            </ThemedText>
           </TouchableOpacity>
         </>
       )}
-    </ThemedView>
+      </ThemedView>
+    </SafeAreaView>
   );
 }

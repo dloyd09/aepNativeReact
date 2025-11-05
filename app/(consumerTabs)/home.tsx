@@ -2,6 +2,7 @@ import React, { useCallback, useState, useEffect } from 'react';
 import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
 import { View, FlatList, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useTheme, useNavigationState } from '@react-navigation/native';
 import { Edge } from '@adobe/react-native-aepedge';
 import { Identity } from '@adobe/react-native-aepedgeidentity';
@@ -123,15 +124,17 @@ export default function HomeTab() {
   );
 
   return (
-    <ThemedView style={{ flex: 1 }}>
-      <ThemedText style={styles.header}>WeRetail</ThemedText>
-      <FlatList
-        data={CATEGORIES}
-        renderItem={renderCategory}
-        keyExtractor={item => item.key}
-        contentContainerStyle={styles.list}
-      />
-    </ThemedView>
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+      <ThemedView style={{ flex: 1 }}>
+        <ThemedText style={styles.header}>WeRetail</ThemedText>
+        <FlatList
+          data={CATEGORIES}
+          renderItem={renderCategory}
+          keyExtractor={item => item.key}
+          contentContainerStyle={styles.list}
+        />
+      </ThemedView>
+    </SafeAreaView>
   );
 }
 

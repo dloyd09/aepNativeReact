@@ -3,6 +3,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import React, { useCallback, useState, useEffect } from 'react';
 import { View, Button, TextInput } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
 import { ScrollableContainer } from '../../components/ScrollableContainer';
@@ -203,7 +204,8 @@ export default function ProfileTab() {
   };
 
   return (
-    <ScrollableContainer contentContainerStyle={{ justifyContent: 'center', alignItems: 'center', flexGrow: 1 }}>
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+      <ScrollableContainer contentContainerStyle={{ justifyContent: 'center', alignItems: 'center', flexGrow: 1 }}>
       <Ionicons name="person" size={48} color={colors.primary} />
       <ThemedText type="title" style={{ marginTop: 12 }}>Profile</ThemedText>
       <View style={{ marginTop: 24, width: '80%' }}>
@@ -248,6 +250,7 @@ export default function ProfileTab() {
           </>
         )}
       </View>
-    </ScrollableContainer>
+      </ScrollableContainer>
+    </SafeAreaView>
   );
 }

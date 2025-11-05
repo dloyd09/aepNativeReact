@@ -13,9 +13,10 @@ governing permissions and limitations under the License.
 import {StyleSheet} from 'react-native';
 export default StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    minHeight: '100%',
   },
   welcome: {
     fontSize: 22,

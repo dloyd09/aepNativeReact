@@ -3,6 +3,7 @@ import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
 import { ScrollableContainer } from '../../components/ScrollableContainer';
 import { View, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import ConfettiCannon from 'react-native-confetti-cannon';
@@ -118,21 +119,21 @@ export default function Checkout() {
     // Set flag to prevent duplicate page views during purchase flow
     setPurchaseInProgress(true);
     
-    const totalAmount = parseFloat(cart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2));
-    
-    // Get fresh profile from AsyncStorage
-    let currentProfile = { firstName: '', email: '' };
     try {
-      const storedProfile = await AsyncStorage.getItem('userProfile');
-      if (storedProfile) {
-        currentProfile = JSON.parse(storedProfile);
+      const totalAmount = parseFloat(cart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2));
+      
+      // Get fresh profile from AsyncStorage
+      let currentProfile = { firstName: '', email: '' };
+      try {
+        const storedProfile = await AsyncStorage.getItem('userProfile');
+        if (storedProfile) {
+          currentProfile = JSON.parse(storedProfile);
+        }
+      } catch (error) {
+        console.error('Failed to read profile:', error);
       }
-    } catch (error) {
-      console.error('Failed to read profile:', error);
-    }
 
-    // Send purchase event
-    try {
+      // Send purchase event
       const purchaseID = `order-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       
       const purchaseEvent = await buildPurchaseEvent({
@@ -165,22 +166,29 @@ export default function Checkout() {
       await resetCartSession();
       console.log('🔄 Cart session reset after purchase');
 
-    } catch (error) {
-      console.error('❌ Error sending purchase event:', error);
-    }
-
-    // Show confetti and navigate
-    setShowConfetti(true);
-    setTimeout(() => {
-      router.replace('/home');
-      setShowConfetti(false);
+      // Show confetti and navigate
+      setShowConfetti(true);
+      
+      // Clear cart immediately (before navigation)
       clearCart();
-    }, 3000);
+      
+      setTimeout(() => {
+        setPurchaseInProgress(false); // Reset flag before navigation
+        setShowConfetti(false);
+        router.replace('/home');
+      }, 3000);
+      
+    } catch (error) {
+      console.error('❌ Error in payment flow:', error);
+      setPurchaseInProgress(false); // Reset on error so user can retry
+      // Optionally show an error alert to user
+    }
   };
 
   return (
-    <ThemedView style={{ flex: 1 }}>
-      <ScrollableContainer>
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+      <ThemedView style={{ flex: 1 }}>
+        <ScrollableContainer>
         <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 10, alignSelf: 'flex-start', marginBottom: 16 }}>
           <ThemedText style={{ color: colors.primary }}>Back</ThemedText>
         </TouchableOpacity>
@@ -203,12 +211,25 @@ export default function Checkout() {
           <ThemedText style={styles.paymentInfoText}>Expiry Date: 12/34</ThemedText>
           <ThemedText style={styles.paymentInfoText}>CVV: 007</ThemedText>
         </View>
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.primary }]} onPress={handlePayment}>
-          <ThemedText style={styles.buttonText}>Pay Now</ThemedText>
+        <TouchableOpacity 
+          style={[
+            styles.button, 
+            { 
+              backgroundColor: purchaseInProgress ? colors.border : colors.primary,
+              opacity: purchaseInProgress ? 0.6 : 1
+            }
+          ]} 
+          onPress={handlePayment}
+          disabled={purchaseInProgress}
+        >
+          <ThemedText style={styles.buttonText}>
+            {purchaseInProgress ? 'Processing Payment...' : 'Pay Now'}
+          </ThemedText>
         </TouchableOpacity>
-      </ScrollableContainer>
-      {showConfetti && <ConfettiCannon count={200} origin={{x: -10, y: 0}} fadeOut={true} />}
-    </ThemedView>
+        </ScrollableContainer>
+        {showConfetti && <ConfettiCannon count={200} origin={{x: -10, y: 0}} fadeOut={true} />}
+      </ThemedView>
+    </SafeAreaView>
   );
 }
 
