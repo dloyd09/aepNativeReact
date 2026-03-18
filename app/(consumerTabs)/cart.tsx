@@ -13,7 +13,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from './_layout';
 import { useCartSession } from '../../hooks/useCartSession';
 import { useProfileStorage } from '../../hooks/useProfileStorage';
-import { buildPageViewEvent, buildCheckoutEvent, buildProductRemovalEvent } from '../../src/utils/xdmEventBuilders';
+import { buildPageViewEvent, buildCheckoutEvent, buildProductRemovalEvent, buildProductListOpenEvent } from '../../src/utils/xdmEventBuilders';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function CartTab() {
@@ -57,7 +57,7 @@ export default function CartTab() {
   });
 
   const { cart, incrementQuantity, decrementQuantity, removeFromCart, addToCart } = useCart();
-  const { cartSessionId, isLoading: isCartSessionLoading } = useCartSession();
+  const { cartSessionId, isLoading: isCartSessionLoading, productListOpenPending, clearProductListOpenPending } = useCartSession();
   const { profile, setProfile: saveProfile } = useProfileStorage();
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
@@ -68,21 +68,49 @@ export default function CartTab() {
   );
 
   const [identityMap, setIdentityMap] = useState({});
+  const refreshIdentityMap = useCallback(async () => {
+    const result = await Identity.getIdentities();
+    console.log('Raw identity result:', JSON.stringify(result, null, 2));
+    if (result && (result as any).identityMap) {
+      setIdentityMap((result as any).identityMap);
+      return (result as any).identityMap;
+    }
+
+    setIdentityMap(result);
+    return result;
+  }, []);
 
   useEffect(() => {
-    // Fetch Identity Map
-    Identity.getIdentities().then((result) => {
-      // Identity.getIdentities() returns { identityMap: { ECID: [...] } }
-      // We need to extract the inner identityMap
-      console.log('Raw identity result:', JSON.stringify(result, null, 2));
-      if (result && result.identityMap) {
-        setIdentityMap(result.identityMap);
-      } else {
-        // Fallback: use the whole result if it's already the right structure
-        setIdentityMap(result);
-      }
+    refreshIdentityMap().catch((error) => {
+      console.error('Cart - Error fetching identities:', error);
     });
-  }, []);
+  }, [refreshIdentityMap]);
+
+  // Send commerce.productListOpens when a new cart was created (so CJA/reports can populate "Cart Opens")
+  useFocusEffect(
+    useCallback(() => {
+      if (!productListOpenPending || !identityMap || Object.keys(identityMap).length === 0) return;
+      const send = async () => {
+        try {
+          let currentProfile = { firstName: '', email: '' };
+          try {
+            const stored = await AsyncStorage.getItem('userProfile');
+            if (stored) currentProfile = JSON.parse(stored);
+          } catch (_) {}
+          const event = await buildProductListOpenEvent({
+            identityMap,
+            profile: currentProfile,
+            cartSessionId: productListOpenPending,
+          });
+          await Edge.sendEvent(event);
+          await clearProductListOpenPending();
+        } catch (e) {
+          console.error('Failed to send productListOpens:', e);
+        }
+      };
+      send();
+    }, [productListOpenPending, identityMap, clearProductListOpenPending])
+  );
 
   // Handle remove from cart with tracking
   const handleRemoveFromCart = async (item: any) => {
@@ -121,13 +149,15 @@ export default function CartTab() {
   useFocusEffect(
     useCallback(() => {
       const handleFocus = async () => {
+        const currentIdentityMap = await refreshIdentityMap();
+
         // Check prerequisites
         if (isCartSessionLoading || !cartSessionId) {
           console.log('Cart session not ready, skipping page view');
           return;
         }
 
-        if (!identityMap || Object.keys(identityMap).length === 0) {
+        if (!currentIdentityMap || Object.keys(currentIdentityMap).length === 0) {
           console.log('IdentityMap not ready, skipping page view');
           return;
         }
@@ -147,7 +177,7 @@ export default function CartTab() {
         // Send page view
         try {
           const pageViewEvent = await buildPageViewEvent({
-            identityMap,
+            identityMap: currentIdentityMap,
             profile: currentProfile,
             pageTitle: 'Shopping Cart',
             pagePath: '/cart',
@@ -172,7 +202,7 @@ export default function CartTab() {
       };
 
       handleFocus();
-    }, [modifiedCart, identityMap, cartSessionId, isCartSessionLoading])
+    }, [modifiedCart, cartSessionId, isCartSessionLoading, refreshIdentityMap])
   );
 
   return (
@@ -229,6 +259,7 @@ export default function CartTab() {
             onPress={async () => {
               if (isCheckingOut) return; // Prevent double-clicks
               setIsCheckingOut(true); // Show loading state
+              let currentProfile = { firstName: '', email: '' };
               
               try {
                 if (!cartSessionId) {
@@ -246,7 +277,6 @@ export default function CartTab() {
                 }
 
                 // Get fresh profile from AsyncStorage before sending event
-                let currentProfile = { firstName: '', email: '' };
                 try {
                   const storedProfile = await AsyncStorage.getItem('userProfile');
                   if (storedProfile) {

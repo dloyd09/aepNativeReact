@@ -15,6 +15,12 @@ import { useProfileStorage } from '../../hooks/useProfileStorage';
 import { useCartSession } from '../../hooks/useCartSession';
 import { buildPageViewEvent, buildPurchaseEvent } from '../../src/utils/xdmEventBuilders';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { refreshDecisioningSurfaceFromStoredConfig } from '../../src/utils/decisioningItems';
+
+/** Demo flat shipping for CJA commerce.shipping.shippingAmount (no live rate API in app). */
+const DEMO_SHIPPING_USD = 5.99;
+/** Demo sales tax rate on subtotal for CJA commerce.order.taxAmount. */
+const DEMO_TAX_RATE = 0.0825;
 
 export default function Checkout() {
   const { colors } = useTheme();
@@ -120,8 +126,13 @@ export default function Checkout() {
     setPurchaseInProgress(true);
     
     try {
-      const totalAmount = parseFloat(cart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2));
-      
+      const subtotal = parseFloat(
+        cart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2)
+      );
+      const taxAmount = parseFloat((subtotal * DEMO_TAX_RATE).toFixed(2));
+      const shippingAmount = DEMO_SHIPPING_USD;
+      const totalAmount = parseFloat((subtotal + shippingAmount + taxAmount).toFixed(2));
+
       // Get fresh profile from AsyncStorage
       let currentProfile = { firstName: '', email: '' };
       try {
@@ -143,7 +154,9 @@ export default function Checkout() {
         cartSessionId: cartSessionId || 'unknown',
         productListItems: modifiedCart,
         priceTotal: totalAmount,
-        currencyCode: 'USD'
+        currencyCode: 'USD',
+        shippingAmount,
+        taxAmount,
       });
 
       console.log('📤 Sending purchase event');
@@ -160,6 +173,12 @@ export default function Checkout() {
       // Refresh in-app messages after purchase (to fetch any triggered messages)
       console.log('🔄 Refreshing in-app messages...');
       await Messaging.refreshInAppMessages();
+      const refreshedSurface = await refreshDecisioningSurfaceFromStoredConfig();
+      if (refreshedSurface) {
+        console.log('Decisioning surface refreshed after purchase:', refreshedSurface);
+      } else {
+        console.log('No decisioning surface configured for post-purchase refresh');
+      }
       console.log('✅ In-app messages refreshed');
 
       // Reset cart session after purchase

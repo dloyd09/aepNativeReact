@@ -8,6 +8,7 @@ buildscript {
         targetSdkVersion = Integer.parseInt(findProperty('android.targetSdkVersion') ?: '34')
         kotlinVersion = findProperty('android.kotlinVersion') ?: '1.9.23'
 
+        // NDK 28 breaks expo-modules-core C++ (char_traits<unsigned char> / string_view). Use 26.x for Expo 51 / RN 0.75.
         ndkVersion = "26.1.10909125"
     }
     repositories {

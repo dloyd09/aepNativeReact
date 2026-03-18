@@ -13,6 +13,7 @@ governing permissions and limitations under the License.
 import React from 'react';
 import { View, Button, StyleSheet, ScrollView } from 'react-native';
 import { useNavigation } from 'expo-router';
+import { ThemedText } from '@/components/ThemedText';
 import styles from '@/styles/styles';
 
 type NavigationProps = {
@@ -24,21 +25,20 @@ export default function HomeScreen() {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={localStyles.buttonContainer}>
-        <Button onPress={() => navigation.navigate('(techScreens)/AppIdConfigView')} title="AppIdConfigView" />
-        <Button onPress={() => navigation.navigate('(techScreens)/CoreView')} title="Core/Lifecycle/Signal" />
-        <Button onPress={() => navigation.navigate('(techScreens)/ProfileView')} title="UserProfile" />
-        <Button onPress={() => navigation.navigate('(techScreens)/IdentityView')} title="Identity" />
-        <Button onPress={() => navigation.navigate('(techScreens)/MessagingView')} title="Messaging" />
-        <Button onPress={() => navigation.navigate('(techScreens)/OptimizeView')} title="Optimize" />
-        <Button onPress={() => navigation.navigate('(techScreens)/EdgeView')} title="Edge" />
-        <Button onPress={() => navigation.navigate('(techScreens)/EdgeIdentityView')} title="EdgeIdentity" />
-        <Button onPress={() => navigation.navigate('(techScreens)/ConsentView')} title="Consent" />
-        <Button onPress={() => navigation.navigate('(techScreens)/EdgeBridgeView')} title="Edge Bridge" />
+        <ThemedText style={localStyles.sectionTitle}>Primary Diagnostics</ThemedText>
+        <ThemedText style={localStyles.sectionBody}>
+          These screens reflect the supported operational path for this app.
+        </ThemedText>
+        <Button onPress={() => navigation.navigate('(techScreens)/CoreView')} title="Setup" />
         <Button onPress={() => navigation.navigate('(techScreens)/AssuranceView')} title="Assurance" />
-        <Button onPress={() => navigation.navigate('(techScreens)/TargetView')} title="Target" />
-        <Button onPress={() => navigation.navigate('(techScreens)/PlacesView')} title="Places" />
-        <Button onPress={() => navigation.navigate('(techScreens)/PushNotificationView')} title="Push Notifications" />
-        <Button onPress={() => navigation.navigate('(techScreens)/DecisioningItemsView')} title="AJO-Decisioning Items" />
+        <Button onPress={() => navigation.navigate('(techScreens)/PushNotificationView')} title="Push" />
+        <Button onPress={() => navigation.navigate('(techScreens)/DecisioningItemsView')} title="Decisioning" />
+
+        <ThemedText style={localStyles.sectionTitle}>Configuration</ThemedText>
+        <ThemedText style={localStyles.sectionBody}>
+          Use this when you need to update the Adobe Launch App ID stored on the device.
+        </ThemedText>
+        <Button onPress={() => navigation.navigate('(techScreens)/AppIdConfigView')} title="App ID Configuration" />
       </View>
     </ScrollView>
   );
@@ -49,5 +49,18 @@ const localStyles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 20,
     gap: 10,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    marginTop: 16,
+    fontWeight: '600',
+    textAlign: 'left',
+  },
+  sectionBody: {
+    fontSize: 13,
+    lineHeight: 18,
+    opacity: 0.8,
+    textAlign: 'left',
+    marginBottom: 4,
   },
 });

@@ -1,772 +1,122 @@
 # Adobe Experience Platform Sample App
 
-## 🎯 **Quick Start Guide for Adobe Employees**
+This is an Expo / React Native sample app for Adobe Experience Platform mobile SDK integrations. It includes App ID configuration, Assurance, push registration, decisioning, and consumer event flows sent through Adobe Edge using XDM.
 
-This is a **demo/bootcamp configuration app** designed for Adobe employees to configure RTCDP connections without requiring mobile development expertise.
+## Quick Start
 
-### 📱 **App Setup Workflow (Required Order)**
+Follow these steps in order:
 
-**⚠️ IMPORTANT: Follow these steps in order for everything to work properly:**
+1. Open **App ID Configuration** and save the Adobe Launch App ID.
+2. Open **Assurance**, paste the session URL, and tap `Start Session`.
+3. Open **Push**, request notification permission, and verify the app shows a current token.
+4. In Assurance, confirm the token in Adobe matches the token shown in the app.
+5. Use **Decisioning** to fetch propositions or refresh in-app messages when needed.
 
-#### **Step 1: Configure Adobe App ID** 🆔
-1. Open the app and navigate to **"App ID Configuration"** screen
-2. Enter your **Adobe Launch App ID** (from Adobe Experience Platform Data Collection)
-3. Tap **"Save App ID"** - this initializes the Adobe SDK
-4. ✅ **Success**: You should see "App ID saved and SDK configured successfully"
+## Technical View
 
-#### **Step 2: Consent Settings (Automatic)** 🔒
-✅ **Consent is automatically set to "Yes" when the SDK initializes** - no manual configuration needed!
+The supported Technical View screens are:
 
-The app automatically configures:
-- Default Consent = Yes
-- Collect Consent = Yes
+- `Setup`
+- `Assurance`
+- `Push`
+- `Decisioning`
+- `App ID Configuration`
 
-This enables data collection for all Adobe features including Edge events, Optimize, and Messaging.
+Older SDK sample/lab screens are hidden and are not part of the normal QA flow.
 
-*Note: The Consent screen in Technical View is still available if you need to manually change consent settings.*
+## Push Notifications
 
-#### **Step 3: Set Up Adobe Assurance** 🔍
-1. Navigate to **"Assurance"** screen
-2. Enter your Assurance session URL using one of these formats:
-   - `myapp://?adb_validation_sessionid=YOUR_SESSION_ID` ✅ **Recommended** (short & simple)
-   - `com.cmtBootCamp.AEPSampleAppNewArchEnabled://?adb_validation_sessionid=YOUR_SESSION_ID` ⚠️ (also works, but longer)
-   - `assurance://?adb_validation_sessionid=YOUR_SESSION_ID` (standard Assurance format)
-3. Tap **"Start Assurance Session"**
-4. Open the Assurance web session in your browser to connect
-5. ✅ **Success**: Adobe Assurance badge should appear in your browser
+The app uses platform-native token sources:
 
-#### **Step 4: Test Push Notifications** 📲
-1. Navigate to **"Push Notifications"** screen
-2. Tap **"Register for FCM Push Notifications"** (Android) or **"Register for Push Notifications"** (iOS)
-3. ✅ **Success**: Real FCM token generated (Android) or Expo token (iOS)
-4. Tap **"Register Token with Adobe Services"** to integrate with Adobe
-5. ✅ **Success**: Token registered with Adobe Services
+- Android: FCM token
+- iOS: native APNs device token
 
-#### **Step 4.1: Test FCM from Adobe Assurance** 🔔
-1. In Adobe Assurance, navigate to **"Push Notifications"** section
-2. Use this **complete FCM payload** for testing:
-   ```json
-   {
-     "message": {
-       "to": "YOUR_FCM_TOKEN_HERE",
-       "notification": {
-         "title": "Assurance - Push Test Message",
-         "body": "Adobe Assurance push notification test"
-       },
-       "android": {
-         "priority": "HIGH",
-         "notification": {
-           "channel_id": "default",
-           "sound": "default",
-           "icon": "ic_notification"
-         },
-         "data": {
-           "adb_uri": "",
-           "adb_n_visibility": "PUBLIC",
-           "adb_n_priority": "PRIORITY_DEFAULT"
-         }
-       }
-     }
-   }
-   ```
-3. **Replace `YOUR_FCM_TOKEN_HERE`** with your actual FCM token from the app
-4. ✅ **Success**: Notification appears in device notification tray
+Adobe registration uses `MobileCore.setPushIdentifier()`.
 
-#### **Step 5: Test Other Features** 🧪
-- **Optimize**: Test A/B testing and personalization (requires consent set to "Yes")
-- **Target**: Test audience targeting
-- **Edge**: Test data collection and streaming
-- **Places**: Test location-based services
+Current behavior:
 
-### 🎉 **Current Status: 100% Complete**
-- ✅ **Push Notifications**: FCM (Android) + APNs (iOS) fully implemented and tested
-- ✅ **Adobe Integration**: Push tokens registered with Adobe Services via MobileCore
-- ✅ **Adobe SDK**: All extensions properly initialized with App ID configuration
-- ✅ **AJO Campaigns**: Real campaign content with personalization working
-- ✅ **XDM Schema Migration**: All 6 consumer tabs migrated to Edge Network
-- ✅ **Production Ready**: Android APK tested, iOS ready for TestFlight
+- the app auto-registers the current token with Adobe after startup / registration
+- Android token refreshes are re-applied to Adobe automatically
+- the Push screen is for status and recovery, not for a separate manual Adobe registration step
 
-## 🔧 **Technical Implementation Status**
+If Assurance shows a push token mismatch:
 
-### **✅ What's Working:**
-- **Adobe SDK**: Full initialization with App ID configuration
-- **FCM Push Notifications**: Real Firebase tokens on Android, Expo tokens on iOS
-- **Adobe Services**: FCM tokens registered with Adobe via MobileCore
-- **AJO Campaigns**: Real campaign content with personalization
-- **Assurance**: Session management and deep linking
-- **Optimize**: A/B testing and proposition handling
-- **Target**: Audience targeting and personalization
-- **Edge**: Data collection and streaming
-- **Places**: Location-based services
-- **Debug Tools**: Comprehensive troubleshooting capabilities
+1. Open `Push`
+2. Tap `Clear Adobe Push Tokens (Fix Mismatch)`
+3. Restart the app
+4. Reconfigure App ID if needed
+5. Request notifications again
+6. Verify the current token now appears in Assurance
 
-### **✅ Issues Resolved:**
-- ✅ **FCM Implementation**: Real Firebase tokens working on Android
-- ✅ **iOS Push Implementation**: APNs via Expo tokens with P8 certificate
-- ✅ **Adobe Integration**: Push tokens (FCM + Expo) register with Adobe Services via MobileCore
-- ✅ **AJO Campaign Content**: Real personalized campaign data displayed
-- ✅ **Duplicate Notifications**: Fixed duplicate token registration issue
-- ✅ **Bundle ID Configuration**: All configuration files consistent and working
-- ✅ **Firebase Setup**: Google Services plugin applied and working
-- ✅ **Dependency Compatibility**: Kotlin 1.9.23 fully compatible with FCM
-- ✅ **Consent Logging**: All consent functions have consistent debug logging
+See [readme-PushTokens.md](/C:/Users/dloyd/Desktop/my_workspace/aepNativeReact/readme-PushTokens.md) for more detail.
 
----
+## Assurance
 
-## 📲 **Push Notifications Implementation - COMPLETE**
+The normal Assurance screen only supports:
 
-**Status**: ✅ **100% Complete** - All 7 phases implemented and tested  
-**Last Updated**: January 2025
+- `Start Session`
+- `Clear Saved Session`
+- `Refresh Session Status`
 
-### **✅ Implementation Summary:**
+Use one of these URL formats:
 
-This app successfully implements push notifications for both Android and iOS platforms, fully integrated with Adobe Experience Platform:
+- `myapp://?adb_validation_sessionid=YOUR_SESSION_ID`
+- `com.cmtBootCamp.AEPSampleAppNewArchEnabled://?adb_validation_sessionid=YOUR_SESSION_ID`
+- `assurance://?adb_validation_sessionid=YOUR_SESSION_ID`
 
-#### **Android Push (FCM):**
-- ✅ Firebase Cloud Messaging (FCM) with real tokens
-- ✅ React Native Firebase (`@react-native-firebase/messaging` v20.5.0)
-- ✅ Google Services plugin configured and applied
-- ✅ Foreground and background message handling
-- ✅ Adobe message detection and routing
-- ✅ Production APK built and tested successfully
+## Decisioning
 
-#### **iOS Push (APNs):**
-- ✅ Apple Push Notification Service (APNs) via Expo tokens
-- ✅ P8 certificate (`AuthKey_87G9NK6Y83.p8`) configured
-- ✅ APNs environment set to production in `app.json`
-- ✅ Push notifications capability enabled via `expo-notifications`
-- ✅ Ready for TestFlight and App Store distribution
+The Technical View `Decisioning` screen is a small diagnostics surface for:
 
-#### **Adobe Integration:**
-- ✅ Push tokens registered with Adobe Services via `MobileCore.setPushIdentifier()`
-- ✅ Token refresh handling for both platforms
-- ✅ Adobe Journey Optimizer (AJO) campaigns working with real content
-- ✅ Push channel configured in Adobe Platform
+- editing the current surface value
+- fetching propositions
+- refreshing in-app messages
+- reviewing the last fetch result
 
-### **📋 All Phases Completed:**
+Default surface configuration is stored under `@decisioning_items_config`.
 
-1. ✅ **Phase 1: Firebase Configuration** - Bundle IDs, Google Services plugin
-2. ✅ **Phase 2: Android FCM Implementation** - Real FCM tokens, message handling
-3. ✅ **Phase 3: iOS Push Implementation** - APNs via Expo, P8 certificate
-4. ✅ **Phase 4: Adobe Messaging Integration** - Token registration with Adobe
-5. ✅ **Phase 5: Push Notification Service** - Platform-specific token retrieval
-6. ✅ **Phase 6: Testing & Validation** - End-to-end testing on both platforms
-7. ✅ **Phase 7: Code Quality** - Consistent logging across all functions
+Current consumer behavior:
 
-### **🔧 Technical Specifications:**
+- the Decisioning Items tab reads cached propositions and then refreshes from Edge on focus
+- checkout refreshes in-app messages and also refreshes the stored decisioning surface after purchase
+- the Offers tab refreshes Optimize propositions from Edge on focus when a valid decision scope is configured
 
-| Component | Details |
-|-----------|---------|
-| **Firebase Project** | `adobe-ea-bootcamp` |
-| **Bundle ID** | `com.cmtBootCamp.AEPSampleAppNewArchEnabled` |
-| **Adobe Messaging** | Extension v7.1.0 |
-| **Android API Level** | 23+ (Android 6.0+) |
-| **iOS Version** | iOS 11.0+ |
-| **React Native** | 0.75.0 |
-| **Expo SDK** | 51.0.28 |
+## Consumer Analytics / XDM
 
-### **🎯 Key Features:**
-- Real push token generation (FCM on Android, Expo on iOS)
-- Platform-specific message handling (foreground/background)
-- Adobe Services integration via MobileCore
-- AJO campaign support with personalization
-- Comprehensive error handling and logging
-- Testing UI for debugging push functionality
+Consumer analytics events must use the event builders in:
 
-### **📱 Ready for Deployment:**
-- **Android**: Production APK tested successfully ✅
-- **iOS**: P8 certificate configured, ready for TestFlight ✅
-- **Adobe Platform**: Push channel configured and working ✅
+- [src/utils/xdmEventBuilders.ts](/C:/Users/dloyd/Desktop/my_workspace/aepNativeReact/src/utils/xdmEventBuilders.ts)
+- [src/utils/identityHelpers.ts](/C:/Users/dloyd/Desktop/my_workspace/aepNativeReact/src/utils/identityHelpers.ts)
 
----
+Events are sent with `Edge.sendEvent(experienceEvent)` and use the `_adobecmteas` tenant namespace.
 
-## 📋 **User Setup Checklist**
-### **Required Setup (In Order):**
-- [x] **App ID Configuration**: Enter Adobe Launch App ID
-- [x] **Adobe SDK Initialization**: SDK properly initialized with App ID
-- [x] **Consent Configuration**: Set consent to "Yes" for data collection
-- [x] **Assurance Setup**: Start Assurance session and connect browser
-- [x] **Push Notifications**: Register for FCM/Expo tokens
-- [x] **Adobe Services**: Register tokens with Adobe Services
+## Key Files
 
-## 🔍 **Troubleshooting Guide**
-### **Common Issues & Solutions:**
+- [app/_layout.tsx](/C:/Users/dloyd/Desktop/my_workspace/aepNativeReact/app/_layout.tsx): app entry and Adobe startup
+- [src/utils/adobeConfig.ts](/C:/Users/dloyd/Desktop/my_workspace/aepNativeReact/src/utils/adobeConfig.ts): Adobe SDK configuration
+- [src/utils/pushNotifications.ts](/C:/Users/dloyd/Desktop/my_workspace/aepNativeReact/src/utils/pushNotifications.ts): push token retrieval and Adobe registration
+- [app/(techScreens)/PushNotificationView.tsx](/C:/Users/dloyd/Desktop/my_workspace/aepNativeReact/app/(techScreens)/PushNotificationView.tsx): push diagnostics screen
+- [app/(techScreens)/DecisioningItemsView.tsx](/C:/Users/dloyd/Desktop/my_workspace/aepNativeReact/app/(techScreens)/DecisioningItemsView.tsx): decisioning diagnostics screen
 
-#### **"Adobe SDK not initialized" Error**
-- **Cause**: App ID not configured
-- **Solution**: Go to "App ID Configuration" screen and enter your Adobe Launch App ID
+## QA Docs
 
-#### **"Adobe Registration Failed" for Push Notifications**
-- **Cause**: Adobe App ID not configured before trying to register FCM tokens
-- **Solution**: Configure App ID first, then register for push notifications
+- [docs/QA-Use-Cases-Review.md](/C:/Users/dloyd/Desktop/my_workspace/aepNativeReact/docs/QA-Use-Cases-Review.md)
+- [docs/Fix-And-Test-Adjustment-Plan.md](/C:/Users/dloyd/Desktop/my_workspace/aepNativeReact/docs/Fix-And-Test-Adjustment-Plan.md)
+- [readme-PushTokens.md](/C:/Users/dloyd/Desktop/my_workspace/aepNativeReact/readme-PushTokens.md)
 
-#### **Optimize Features Not Working / No Propositions Received**
-- **Cause**: Consent not set to "Yes" before calling updatePropositions
-- **Solution**: 
-  1. Go to "Consent" screen
-  2. Tap "Set Default Consent - Yes"
-  3. Tap "Set Collect Consent - Yes"
-  4. Then test Optimize features in "Optimize" screen
+## Local Checks
 
-#### **Assurance Badge Not Appearing**
-- **Cause**: App ID not configured, invalid URL format, or network issues
-- **Solution**: 
-  1. Ensure App ID is configured first
-  2. Use the correct URL scheme format:
-     - `myapp://?adb_validation_sessionid=YOUR_SESSION_ID` 
-     - `com.cmtBootCamp.AEPSampleAppNewArchEnabled://?adb_validation_sessionid=YOUR_SESSION_ID` ⚠️ Also works
-     - `assurance://?adb_validation_sessionid=YOUR_SESSION_ID` (standard format)
-  3. Check network connectivity
-  4. Try "Clear All Adobe Caches" button
-  5. Restart Assurance session
+Useful commands:
 
-#### **FCM Token Generation Fails**
-- **Cause**: Firebase configuration issues
-- **Solution**: 
-  1. Ensure you're on a physical device (not simulator)
-  2. Check internet connectivity
-  3. Verify Firebase project configuration
-
-#### **"Push Token Mismatch" in Assurance**
-- **Cause**: Adobe profile was created with a different token (mock token) and now using real FCM tokens
-- **Solution**: 
-  1. Go to "Push Notifications" screen
-  2. Tap **"Clear Adobe Push Tokens (Fix Mismatch)"** button
-  3. Restart the app completely
-  4. Reconfigure App ID in "App ID Configuration" screen
-  5. Start Assurance session again
-  6. Register for FCM push notifications
-  7. ✅ **Result**: Fresh Adobe profile with matching FCM token
-
-#### **"Adobe Messaging extension not available" Warning**
-- **Cause**: Adobe Messaging extension API has changed - `setPushIdentifier` method no longer exists
-- **Impact**: This is a **non-critical warning** - functionality still works via MobileCore
-- **Solution**: **No action needed** - the app uses MobileCore for token registration (which works perfectly)
-- **Note**: Do not attempt to revert to Messaging extension API - it will cause runtime errors
-
-#### **"Sandbox: unknown" in Assurance**
-- **Cause**: Launch property not configured with Edge Configuration ID, incorrect sandbox settings, or consent collection set to "No"
-- **Impact**: Affects Optimize offers, Edge streaming, and other Adobe services
-- **Solution**: 
-  1. **Check Consent Settings**: Go to "Consent" screen and ensure consent is set to "Yes"
-  2. Go to "Assurance" screen
-  3. Tap **"Debug Sandbox Configuration"** button to check current setup
-  4. Check your Launch property in Adobe Experience Platform Data Collection
-  5. Ensure Edge Configuration ID is configured and pointing to correct sandbox
-  6. Verify events are reaching Adobe Experience Platform
-  7. ✅ **Result**: Sandbox should show correct environment (prod/stage)
-
-#### **Assurance ID Stuck / Old Session Persists**
-- **Cause**: App data (AsyncStorage) persists on device even after uninstalling the app
-- **Impact**: Old Assurance session IDs and App IDs remain cached, preventing fresh configuration
-- **Why This Happens**: 
-  - `gradle clean` only clears build artifacts (compiled code), NOT device data
-  - Uninstalling the app sometimes keeps SharedPreferences as a "backup" (Android feature)
-  - AsyncStorage lives in device's file system: `/data/data/com.cmtBootCamp.AEPSampleAppNewArchEnabled/shared_prefs/`
-
-**Solution 1 - Clear App Data from Device (Recommended for most users):**
-1. On your Android device, go to **Settings** → **Apps** → **AEPSampleAppNewArchEnabled**
-2. Tap **Storage & cache** (or **Storage**)
-3. Tap **Clear storage** (or **Clear data**)
-4. Tap **Clear cache**
-5. ✅ Restart the app - it will be completely fresh with no saved configuration
-
-**Solution 2 - Clear App Data via ADB (For developers with USB debugging):**
-  ```bash
-  adb shell pm clear com.cmtBootCamp.AEPSampleAppNewArchEnabled
-  ```
-  This command completely clears:
-  - ✅ AsyncStorage (App ID, Assurance URL)
-  - ✅ All SharedPreferences
-  - ✅ All app data, cache, and databases
-  - ✅ Everything except the installed APK
-
-**⚠️ When to Clear App Data:**
-- Assurance not connecting or stuck on old session
-- App ID or Assurance URL persists after code changes
-- Strange behavior after switching between development/production builds
-- After major Adobe SDK configuration changes
-
-**After Clearing**: Restart the app and reconfigure Assurance/App ID from scratch
-
-### **Debug Tools Available:**
-- **Debug Setup Button**: Checks MobileCore, Assurance, and IMS Org status
-- **Check Real Connection**: Validates actual Adobe service connectivity
-- **Clear All Adobe Caches**: Resets all cached data and IMS Org information
-- **Debug Sandbox Configuration**: Checks Adobe configuration and sandbox settings
-- **🔍 Compare Session IDs**: Compares React Native input vs native SDK actual session
-- **FCM Test Buttons**: Test FCM token generation and message handling
-- **Clear Adobe Push Tokens**: Fixes push token mismatch issues
-
-### **Local USB Testing - Viewing Logs:**
-
-**⚠️ IMPORTANT: If logs don't appear after `npx expo run:android`:**
-
-When testing locally via USB, you may encounter an issue where Metro bundler starts but no logs appear in the terminal:
-
-**Solution:**
-1. Wait for the app to fully launch on your device
-2. **Completely close the app** on your phone (swipe away from recent apps)
-3. **Reopen the app** from your phone
-4. ✅ Logs should now appear in your terminal
-
-**Why this happens:**
-- The first launch may not properly connect the logging bridge
-- Closing and reopening the app re-establishes the connection between Metro and the device
-
-**Before testing any features:**
-- Always verify you can see logs in the terminal
-- Look for initialization messages like "Adobe SDK initialized successfully"
-- If no logs appear, close and reopen the app before proceeding
-
-### **Enable Verbose Logging for Debugging:**
-
-By default, the app uses `LogLevel.ERROR` for better performance. To see detailed Adobe SDK logs for debugging:
-
-1. Open `src/utils/adobeConfig.ts`
-2. Find line 72 and change:
-   ```typescript
-   // From this (production mode):
-   MobileCore.setLogLevel(LogLevel.ERROR);
-   
-   // To this (debug mode):
-   MobileCore.setLogLevel(LogLevel.VERBOSE);
-   ```
-3. Rebuild the app: `npx expo run:android`
-4. ✅ You'll now see all Adobe SDK operations in logcat
-5. ⚠️ **Remember to change it back to ERROR when done** - VERBOSE significantly slows down the app
-
-### **Advanced Debugging with Android Logcat (PowerShell):**
-
-If Assurance isn't connecting, use PowerShell to see what session ID the native SDK is actually using:
-
-#### **Quick Check (Last 5 Connections):**
 ```powershell
-adb logcat -d | Select-String -Pattern "AssuranceSession - Connecting" | Select-Object -Last 5
+node .\node_modules\typescript\bin\tsc --noEmit
 ```
 
-#### **Real-Time Monitoring:**
 ```powershell
-# Clear old logs and monitor in real-time
-adb logcat -c
-adb logcat | Select-String -Pattern "AssuranceSession - Connecting|sessionId="
-```
-
-#### **Full Debug Session:**
-```powershell
-# Terminal 1: Monitor native SDK
-adb logcat | Select-String -Pattern "AssuranceSession|sessionId|adb_validation_sessionid"
-
-# Terminal 2: Run your app
 npx expo run:android
-
-# In the app:
-# 1. Tap "🔍 Compare Session IDs" button
-# 2. Compare Metro console output vs Terminal 1 output
-# 3. If session IDs don't match → Adobe SDK bug
 ```
 
-#### **Save Debug Output:**
-```powershell
-adb logcat | Select-String -Pattern "Assurance" | Out-File -FilePath assurance-debug.txt
-```
+## Build Notes
 
-**What to Look For:**
-- Metro console shows: `Input Session ID: c4752e9b-3260-43ac-9e34-f1c78854b9e0`
-- Logcat shows: `sessionId=de4a3b7f-fe01-48b2-b520-20c364968856`
-- **If they don't match** → The native SDK is caching an old session (SDK bug)
-
-## 📚 Resources
-
-- [Adobe Configuration Documentation](https://developer.adobe.com/client-sdks/documentation/configuration/)
-- [Environment-Aware Configuration](https://developer.adobe.com/client-sdks/documentation/configuration/#environment-aware-configuration-properties)
-- [Assurance Deep Linking](https://developer.adobe.com/client-sdks/documentation/platform-assurance-sdk/api-reference/)
-- [Optimize Sandbox Configuration](https://developer.adobe.com/client-sdks/documentation/optimize-sdk/api-reference/)
-https://developer.adobe.com/client-sdks/home/base/mobile-core/configuration/
-
----
-
-## 📊 **XDM Schema Migration - COMPLETE**
-
-**Migration Date**: October 2025  
-**Status**: ✅ **100% Complete** - All consumer tabs migrated to `tempMobile Interactions` schema
-
-### **What Was Done:**
-Migrated all consumer-facing analytics from legacy `MobileCore.trackState/trackAction` calls to the new XDM schema using `Edge.sendEvent()` with the `_adobecmteas` tenant namespace.
-
-### **✅ Consumer Views Migrated (6/6):**
-- ✅ **home.tsx** - Page views, category navigation, product views, add to cart
-- ✅ **cart.tsx** - Page views, checkout initiation, product removal, cart sessionization
-- ✅ **Checkout.tsx** - Page views, purchase completion with order details
-- ✅ **profile.tsx** - Page views, login/logout events
-- ✅ **offers.tsx** - Page views, add to cart (Adobe Optimize propositions)
-- ✅ **decisioningItems.tsx** - Page views, add to cart (Adobe Journey Optimizer propositions)
-
-### **✅ Event Types Implemented (7/7):**
-- ✅ `web.webpagedetails.pageViews` - All 8 screens
-- ✅ `commerce.productViews` - Product detail pages
-- ✅ `commerce.productListAdds` - Add to cart actions
-- ✅ `commerce.productListRemovals` - Remove from cart
-- ✅ `commerce.checkouts` - Checkout initiation
-- ✅ `commerce.purchases` - Order completion
-- ✅ `web.webinteraction.linkClicks` - Login/logout actions
-
-### **✅ Architecture Created:**
-- ✅ **`src/utils/xdmEventBuilders.ts`** - 8 XDM event builders + environment helper
-- ✅ **`src/utils/identityHelpers.ts`** - SHA-256 email hashing, identity building
-- ✅ **`hooks/useCartSession.ts`** - Persistent cart session management
-
-### **✅ Schema Compliance:**
-- ✅ All events use `_adobecmteas` tenant namespace
-- ✅ Deprecated fields removed (CJM, push tracking, old login mixins)
-- ✅ Required XDM fields present (_id, timestamp, eventType, commerce/web values)
-- ✅ Identity management (ECID + authenticated email with SHA-256 hashing)
-- ✅ Environment context (device type, OS, screen dimensions)
-- ✅ Fresh profile data from AsyncStorage (no stale data issues)
-- ✅ Cart sessionization for cross-session analytics
-- ✅ Product data fully dynamic from JSON (no hardcoding)
-
-### **📁 Key Files:**
-- **Event Builders**: `src/utils/xdmEventBuilders.ts` (968 lines)
-- **Identity Helpers**: `src/utils/identityHelpers.ts` (139 lines)
-- **Cart Session Hook**: `hooks/useCartSession.ts`
-- **Migration Guide**: `SchemaUpdateGuide.md` (reference)
-- **Implementation Plan**: `TODO-SchemaImplementation.md` (archived)
-
-### **🎯 Result:**
-Clean, schema-compliant XDM events flowing to Adobe Experience Platform Edge Network. All consumer interactions tracked with proper tenant namespace, identity stitching, and commerce funnel analytics.
-
-### **📝 Using XDM Events in Your Code:**
-
-**IMPORTANT**: All XDM events **MUST** use the event builder functions from `src/utils/xdmEventBuilders.ts` and be wrapped in `ExperienceEvent` instances.
-
-**✅ Correct Pattern:**
-```typescript
-import { Edge, ExperienceEvent } from '@adobe/react-native-aepedge';
-import { buildPageViewEvent } from '@/src/utils/xdmEventBuilders';
-
-// Build event using helper function (returns ExperienceEvent instance)
-const pageViewEvent = await buildPageViewEvent({
-  identityMap,
-  profile: currentProfile,
-  pageTitle: 'Home',
-  pagePath: '/home',
-  pageType: 'home'
-});
-
-// Send to Edge Network
-await Edge.sendEvent(pageViewEvent);
-```
-
-**❌ Incorrect Pattern (causes Assurance errors):**
-```typescript
-// DON'T create plain objects - this breaks Edge Network tracking
-const event = {
-  xdm: { eventType: 'pageView', ... }
-};
-await Edge.sendEvent(event); // ❌ Missing ExperienceEvent wrapper
-```
-
-**Available Event Builders:**
-- `buildPageViewEvent()` - Page/screen views
-- `buildProductViewEvent()` - Product detail views
-- `buildProductListAddEvent()` - Add to cart
-- `buildProductRemovalEvent()` - Remove from cart
-- `buildCheckoutEvent()` - Checkout initiation
-- `buildPurchaseEvent()` - Order completion
-- `buildLoginEvent()` / `buildLogoutEvent()` - Authentication
-
-**Why This Matters:**
-- `ExperienceEvent` wrapper ensures proper Edge Network Hit tracking
-- Event builders guarantee schema compliance with `_adobecmteas` tenant namespace
-- Consistent structure prevents Assurance validation errors
-- All required XDM fields (`_id`, `timestamp`, `environment`) are automatically included
-
----
-
-## 📱 **Cross-Platform UI Optimization - COMPLETE**
-
-### **Problems Solved:**
-
-**User-Reported Issue:** Users needed to set iOS system font to "extra small" to see all content on screen.
-
-**Root Causes:**
-1. **Font Scaling** - iOS/Android automatically scaled text based on accessibility settings, breaking layouts
-2. **Safe Area** - Content overlapped with notches, punch-hole cameras, and status bars on modern devices
-
-### **✅ Fixes Implemented:**
-
-#### **1. Font Scaling Fix** (Critical)
-- Added `allowFontScaling={false}` to `ThemedText` component
-- **Impact:** Prevents iOS/Android from scaling text based on system font settings
-- **Result:** Consistent layout across all devices regardless of accessibility settings
-
-#### **2. SafeAreaView Support** (Modern Devices)
-- Wrapped all consumer screens with `SafeAreaView`
-- **Impact:** Content no longer overlaps with device features (notches, punch-holes, status bars)
-- **Result:** Professional appearance on iPhone X+, Samsung Galaxy, and all modern devices
-
-### **✅ Devices That Benefit:**
-
-**iOS:**
-- iPhone 14 Pro/Pro Max (Dynamic Island)
-- iPhone X and newer (notch)
-- Users with Large Text accessibility enabled
-
-**Android:**
-- Samsung Galaxy (punch-hole cameras)
-- Pixel devices (gesture navigation)
-- Users with "Display Size: Large" setting
-
-### **✅ Button Loading States:**
-
-Fixed checkout flow buttons to prevent duplicate clicks and provide visual feedback:
-- **Checkout button** (Cart) - Shows "Processing..." while sending events
-- **Pay Now button** (Checkout) - Shows "Processing Payment..." during purchase flow
-- Both buttons disabled during processing to prevent duplicate transactions
-
-### **📁 Files Modified:**
-- `components/ThemedText.tsx` - Font scaling fix
-- `app/(consumerTabs)/cart.tsx` - SafeAreaView + loading state
-- `app/(consumerTabs)/Checkout.tsx` - SafeAreaView + loading state
-- `app/(consumerTabs)/home.tsx` - SafeAreaView
-- `app/(consumerTabs)/profile.tsx` - SafeAreaView
-
-### **🎯 Result:**
-Professional, consistent UI across iOS, Android, Samsung, and all device sizes. No more layout breaking with accessibility settings enabled.
-
----
-
-## 🎉 **Project Status**
-
-**Last Updated**: January 2025  
-**Status**: ✅ **100% Complete** - Full AEP Integration
-
-### **✅ Fully Complete:**
-- ✅ **Push Notifications**: FCM (Android) + APNs (iOS) - all 7 phases complete
-- ✅ **Adobe SDK**: Full integration with App ID configuration
-- ✅ **AJO Campaigns**: Real campaign content with personalization
-- ✅ **XDM Schema Migration**: All 6 consumer tabs migrated to Edge Network
-- ✅ **Edge Network Tracking**: Using `_adobecmteas` tenant namespace
-- ✅ **Production Builds**: Android APK tested, iOS ready for TestFlight
-- ✅ **User-Friendly Setup**: Documented workflow for non-developers
-- ✅ **Comprehensive Troubleshooting**: Debug tools and solutions guide
-- ✅ **End-to-End Validation**: Complete testing on both platforms
-- ✅ **Code Quality**: Consistent logging and error handling
-
-### **🔮 Future Enhancements:**
-- 🔄 TestFlight distribution and iOS production testing
-- 🔄 Adobe Decisioning Module integration for advanced personalization
-- 🔄 App Store / Google Play submission (if needed)
-
-### **🎯 Mission Accomplished:**
-All Adobe Experience Platform integration objectives achieved:
-- **Push Notifications**: Multi-platform push with Adobe integration
-- **XDM Analytics**: Full schema migration with tenant namespace
-- **Demo-Ready**: Easy configuration for Adobe employees and bootcamp participants
-- **Production-Ready**: Built, tested, and ready for deployment
-
----
-
-## ⚙️ **Developer Configuration Reference**
-
-### **Hardcoded Default Values**
-
-For future developers who need to modify default configurations:
-
-#### **Decisioning Items (Code-Based Experiences)**
-
-**Default Surface:**
-- **Value**: `"edge-offers"`
-- **Location**: 
-  - `app/(consumerTabs)/decisioningItems.tsx` (line 38)
-  - `app/(techScreens)/DecisioningItemsView.tsx` (line 32)
-- **Usage**: Automatically set when users first access Decisioning Items
-- **To Change**: Update `DEFAULT_SURFACE` constant in both files
-
-**Preview URL:**
-- **Value**: `"com.cmtBootCamp.AEPSampleAppNewArchEnabled://decisioning-items"`
-- **Location**: 
-  - `app/(consumerTabs)/decisioningItems.tsx` (line 39)
-  - `app/(techScreens)/DecisioningItemsView.tsx` (line 29)
-- **Usage**: Deep link for on-device campaign previews in AJO
-- **To Change**: Update `PREVIEW_URL` or `DEFAULT_PREVIEW_URL` constant
-
-#### **Consent Settings**
-
-**Default Consent:**
-- **Value**: `{ val: 'y' }` (Yes)
-- **Location**: `src/utils/adobeConfig.ts` (lines 134-151)
-- **Usage**: Automatically set during SDK initialization
-- **To Change**: Modify the consent values in `configureAdobe()` function
-
-**Why Auto-Set?**
-- Simplifies bootcamp setup - no manual consent button pressing
-- Enables immediate data collection and event sending
-- Prevents Edge.sendEvent() from hanging while waiting for consent
-
-#### **Messaging Delegate**
-
-**Auto-Configuration:**
-- **Location**: `src/utils/adobeConfig.ts` (lines 157-170)
-- **Usage**: Automatically configured for in-app messages
-- **Callbacks**:
-  - `shouldShowMessage: () => true` - Always show messages
-  - `shouldSaveMessage: () => true` - Save messages for later
-- **To Change**: Modify the delegate configuration in `configureAdobe()` function
-
-#### **Deep Link Schemes**
-
-**App URL Schemes:**
-- **Primary**: `myapp://` (simplified)
-- **Full**: `com.cmtBootCamp.AEPSampleAppNewArchEnabled://`
-- **Location**: 
-  - `app.json` (line 8)
-  - `android/app/src/main/AndroidManifest.xml` (lines 29-30)
-- **Usage**: Deep linking for in-app messages and Assurance
-- **Routes**: `/home`, `/cart`, `/decisioningItems`, `/profile`, `/Checkout`
-
-### **Storage Keys Reference**
-
-Important AsyncStorage keys used throughout the app:
-
-- `@adobe_app_id` - Stored Adobe Launch App ID
-- `@decisioning_items_config` - Decisioning Items surface configuration
-- `@edge_offers_config` - Legacy key (migrated to @decisioning_items_config)
-- `@cart_session_id` - Persistent cart session identifier
-- `userProfile` - User profile data (firstName, email)
-
-### **Version Management (Android)**
-
-**Automatic Version Control:**
-
-The app uses a versioning system that reads from `android/version.properties`:
-
-```properties
-VERSION_CODE=1
-VERSION_NAME=1.0.1
-```
-
-**Available Commands:**
-
-```bash
-# Check current version
-cd android && ./gradlew currentVersion
-
-# Increment patch version (1.0.1 → 1.0.2)
-cd android && ./gradlew incrementVersion
-
-# Increment minor version (1.0.1 → 1.1.0)
-cd android && ./gradlew incrementMinor
-
-# Increment major version (1.0.1 → 2.0.0)
-cd android && ./gradlew incrementMajor
-```
-
-**What Gets Updated:**
-- ✅ `android/version.properties` (Android version)
-- ✅ `app.json` (Expo/iOS version)
-- Both files stay in sync automatically!
-
-**Typical Release Workflow:**
-
-```bash
-# 1. Increment version before building
-cd android && ./gradlew incrementVersion
-
-# 2. Build the release APK (version is automatically applied)
-./gradlew assembleRelease
-
-# 3. Output APK will be named with the new version:
-# android/app/build/outputs/apk/release/WeRetail-1.0.2-release.apk
-```
-
-**Version Components:**
-- **VERSION_CODE**: Integer that must increase with each release (used by Play Store)
-- **VERSION_NAME**: Human-readable version string (displayed to users)
-- Both increment automatically when you run version commands
-- Patch resets to 0 when minor increments, minor resets to 0 when major increments
-
-**Location:** `android/version.properties` (tracked in git)
-
----
-
-## 🚀 **Building Android APK**
-
-### **Release Build Workflow**
-
-**Option 1: New Version Release** (Recommended)
-
-```bash
-# 1. Check current version
-cd android && ./gradlew currentVersion
-
-# 2. Increment version
-./gradlew incrementVersion        # 1.0.1 → 1.0.2
-# OR ./gradlew incrementMinor     # 1.0.1 → 1.1.0
-# OR ./gradlew incrementMajor     # 1.0.1 → 2.0.0
-
-# 3. Build release APK
-./gradlew assembleRelease
-```
-
-**Option 2: Build Without Version Change**
-
-```bash
-# Skip version increment, build with current version
-cd android && ./gradlew assembleRelease
-```
-
-**Quick Build (Increment + Build in one command):**
-
-```bash
-cd android && ./gradlew incrementVersion assembleRelease
-```
-
-### **APK Output Location**
-
-After building, your APK will be at:
-
-```
-android/app/build/outputs/apk/release/WeRetail-{version}-release.apk
-```
-
-Example: `WeRetail-1.0.2-release.apk`
-
-### **Troubleshooting Build Issues**
-
-If the build fails, clean and rebuild:
-
-```bash
-cd android && ./gradlew clean
-./gradlew assembleRelease
-```
-
-**Common Issues:**
-- **Build cache problems**: Run `./gradlew clean` first
-- **Out of memory**: Close other apps, try again
-- **Gradle daemon issues**: Run `./gradlew --stop` then rebuild
-- **Version not updating**: Make sure `android/version.properties` exists
-
-### **Debug Build (for testing)**
-
-For debug builds (faster, includes debug info):
-
-```bash
-cd android && ./gradlew assembleDebug
-# Output: android/app/build/outputs/apk/debug/WeRetail-{version}-debug.apk
-```
-
-### **Installing APK on Device**
-
-**Via ADB:**
-```bash
-adb install android/app/build/outputs/apk/release/WeRetail-1.0.2-release.apk
-```
-
-**Via File Transfer:**
-1. Copy APK to your device
-2. Open file manager on device
-3. Tap the APK file
-4. Allow installation from unknown sources if prompted
-
+- Android local testing is supported from Windows.
+- iOS validation should use EAS / TestFlight from this setup.

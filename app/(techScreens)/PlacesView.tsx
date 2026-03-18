@@ -42,7 +42,13 @@ const extensionVersion = async () => {
 };
 
 const getNearbyPointsOfInterest = async () => {
-  const location = new PlacesLocation(CURRENT_EXAMPLE_LONGITUDE, CURRENT_EXAMPLE_LATITUDE);
+  const location = new PlacesLocation(
+    CURRENT_EXAMPLE_LONGITUDE,
+    CURRENT_EXAMPLE_LATITUDE,
+    0,
+    0,
+    0
+  );
   try {
     const pois = await Places.getNearbyPointsOfInterest(location, 5);
     console.log(

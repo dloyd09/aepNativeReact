@@ -88,8 +88,13 @@ interface PurchaseEventParams extends BaseEventParams {
   purchaseID: string;
   cartSessionId: string;
   productListItems: any[];
+  /** Grand total (subtotal + shipping + tax) — maps to commerce.order.priceTotal */
   priceTotal: number;
   currencyCode?: string;
+  /** CJA: commerce.shipping.shippingAmount */
+  shippingAmount?: number;
+  /** CJA: commerce.order.taxAmount */
+  taxAmount?: number;
 }
 
 interface ProductInteractionParams extends BaseEventParams {
@@ -124,6 +129,11 @@ interface ProductListAddEventParams extends BaseEventParams {
     quantity?: number;
   };
   cartSessionId: string;
+}
+
+/** Params for product list open (e.g. new cart created). Call when a new cart session is created. */
+interface ProductListOpenEventParams extends BaseEventParams {
+  cartSessionId?: string;
 }
 
 // ============================================================================
@@ -281,6 +291,15 @@ export const buildPageViewEvent = async (
     );
   }
 
+  // Cart Views: include commerce.productListViews so CJA/reports using that metric populate
+  if (params.pageType === 'cart') {
+    xdmData.commerce = {
+      productListViews: {
+        value: 1
+      }
+    };
+  }
+
   // Return ExperienceEvent instance (required by Adobe SDK)
   return new ExperienceEvent({ xdmData });
 };
@@ -321,6 +340,9 @@ export const buildCheckoutEvent = async (
     authentication: {
       loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
     },
+    visitorDetails: {
+      visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
+    },
     channelInfo: {
       channel: 'Mobile App',
       participantName: (params.profile?.firstName || 'guest user').toLowerCase()
@@ -358,6 +380,7 @@ export const buildCheckoutEvent = async (
     
     web: {
       webPageDetails: {
+        pageViews: { value: 1 },  // For "Checkout Views" metrics in CJA
         _adobecmteas: {
           pageTitle: 'Shopping Cart',
           pagePath: '/cart',
@@ -380,6 +403,55 @@ export const buildCheckoutEvent = async (
   };
 
   // Return ExperienceEvent instance (required by Adobe SDK)
+  return new ExperienceEvent({ xdmData });
+};
+
+/**
+ * Build product list open event (e.g. new shopping cart created).
+ * Send when a new cart session is created so "Cart Opens" / productListOpens metrics populate.
+ *
+ * @param params - Identity and optional cartSessionId
+ * @returns ExperienceEvent ready for Edge.sendEvent()
+ */
+export const buildProductListOpenEvent = async (
+  params: ProductListOpenEventParams
+): Promise<any> => {
+  const ecid = extractECID(params.identityMap);
+  const identities = await buildTenantIdentities({
+    ecid,
+    email: params.profile?.email,
+    phone: params.profile?.phone
+  });
+
+  const tenantData: any = {
+    authentication: {
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
+    },
+    visitorDetails: {
+      visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
+    },
+    channelInfo: {
+      channel: 'Mobile App',
+      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
+    }
+  };
+  if (identities && Object.keys(identities).length > 0) {
+    tenantData.identities = identities;
+  }
+
+  const eventId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  const xdmData: any = {
+    _id: eventId,
+    eventType: 'commerce.productListOpens',
+    timestamp: new Date().toISOString(),
+    identityMap: params.identityMap,
+    _adobecmteas: tenantData,
+    environment: buildEnvironment(),
+    commerce: {
+      productListOpens: { value: 1 }
+    }
+  };
+
   return new ExperienceEvent({ xdmData });
 };
 
@@ -529,8 +601,18 @@ export const buildPurchaseEvent = async (
       order: {
         purchaseID: params.purchaseID,
         priceTotal: params.priceTotal,
-        currencyCode: params.currencyCode || 'USD'
-      }
+        currencyCode: params.currencyCode || 'USD',
+        ...(params.taxAmount !== undefined && params.taxAmount !== null
+          ? { taxAmount: params.taxAmount }
+          : {})
+      },
+      ...(params.shippingAmount !== undefined && params.shippingAmount !== null
+        ? {
+            shipping: {
+              shippingAmount: params.shippingAmount
+            }
+          }
+        : {})
     },
     
     web: {

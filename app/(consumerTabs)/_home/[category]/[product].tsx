@@ -47,6 +47,16 @@ export default function ProductDetail() {
   const { cartSessionId, isLoading: isCartSessionLoading } = useCartSession();
 
   const [identityMap, setIdentityMap] = useState({});
+  const refreshIdentityMap = useCallback(async () => {
+    const result = await Identity.getIdentities();
+    if (result && (result as any).identityMap) {
+      setIdentityMap((result as any).identityMap);
+      return (result as any).identityMap;
+    }
+
+    setIdentityMap(result);
+    return result;
+  }, []);
 
   // Find the product in the JSON data
   const productData = (productsData as Product[]).find(
@@ -57,23 +67,20 @@ export default function ProductDetail() {
 
   // Initialize identityMap on component mount
   useEffect(() => {
-    Identity.getIdentities().then((result) => {
-      if (result && result.identityMap) {
-        setIdentityMap(result.identityMap);
-      } else {
-        setIdentityMap(result);
-      }
+    refreshIdentityMap().catch((error) => {
+      console.error('Product Detail - Error fetching identities:', error);
     });
-  }, []);
+  }, [refreshIdentityMap]);
 
   // Send product view when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       const handleFocus = async () => {
         if (!productData) return;
+        const currentIdentityMap = await refreshIdentityMap();
 
         // Check if identityMap is ready
-        if (!identityMap || Object.keys(identityMap).length === 0) {
+        if (!currentIdentityMap || Object.keys(currentIdentityMap).length === 0) {
           console.log('Product Detail - IdentityMap not ready, skipping product view');
           return;
         }
@@ -92,7 +99,7 @@ export default function ProductDetail() {
         // Send page view event with siteSection hierarchy
         try {
           const pageViewEvent = await buildPageViewEvent({
-            identityMap,
+            identityMap: currentIdentityMap,
             profile: currentProfile,
             pageTitle: productData.product.name,
             pagePath: `/home/${category}/${product}`,
@@ -117,7 +124,7 @@ export default function ProductDetail() {
         // Send product view event (commerce event)
         try {
           const productViewEvent = await buildProductViewEvent({
-            identityMap,
+            identityMap: currentIdentityMap,
             profile: currentProfile,
             product: {
               sku: productSku || '',
@@ -142,7 +149,7 @@ export default function ProductDetail() {
       };
 
       handleFocus();
-    }, [productData, category, productSku, identityMap])
+    }, [productData, category, productSku, refreshIdentityMap])
   );
 
   //console.log({ category, product, productData });
@@ -180,7 +187,8 @@ export default function ProductDetail() {
       return;
     }
 
-    if (!identityMap || Object.keys(identityMap).length === 0) {
+    const currentIdentityMap = await refreshIdentityMap();
+    if (!currentIdentityMap || Object.keys(currentIdentityMap).length === 0) {
       console.log('IdentityMap not ready, skipping add to cart event');
       return;
     }
@@ -199,7 +207,7 @@ export default function ProductDetail() {
     // Send product list add event
     try {
       const productListAddEvent = await buildProductListAddEvent({
-        identityMap,
+        identityMap: currentIdentityMap,
         profile: currentProfile,
         product: {
           sku: productSku || '',

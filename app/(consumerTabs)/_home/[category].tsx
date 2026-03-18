@@ -131,33 +131,39 @@ export default function CategoryProductList() {
   const navigation = useNavigation();
 
   const [identityMap, setIdentityMap] = useState({});
+  const refreshIdentityMap = useCallback(async () => {
+    console.log('Category - Fetching identities...');
+    const result = await Identity.getIdentities();
+    console.log('Category - Identity result:', JSON.stringify(result, null, 2));
+    if (result && (result as any).identityMap) {
+      console.log('Category - Setting identityMap from result.identityMap');
+      setIdentityMap((result as any).identityMap);
+      return (result as any).identityMap;
+    }
+
+    console.log('Category - Setting identityMap from result directly');
+    setIdentityMap(result);
+    return result;
+  }, []);
 
   // Filter products by category
   const products = productsData.filter(product => product.product.categories.primary.toLowerCase() === category?.toLowerCase());
 
   // Initialize identityMap on component mount
   useEffect(() => {
-    console.log('Category - Fetching identities...');
-    Identity.getIdentities().then((result) => {
-      console.log('Category - Identity result:', JSON.stringify(result, null, 2));
-      if (result && result.identityMap) {
-        console.log('Category - Setting identityMap from result.identityMap');
-        setIdentityMap(result.identityMap);
-      } else {
-        console.log('Category - Setting identityMap from result directly');
-        setIdentityMap(result);
-      }
-    }).catch((error) => {
+    refreshIdentityMap().catch((error) => {
       console.error('Category - Error fetching identities:', error);
     });
-  }, []);
+  }, [refreshIdentityMap]);
 
   // Send page view when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       const handleFocus = async () => {
+        const currentIdentityMap = await refreshIdentityMap();
+
         // Check if identityMap is ready
-        if (!identityMap || Object.keys(identityMap).length === 0) {
+        if (!currentIdentityMap || Object.keys(currentIdentityMap).length === 0) {
           console.log('Category - IdentityMap not ready, skipping page view');
           return;
         }
@@ -179,7 +185,7 @@ export default function CategoryProductList() {
         // Send page view
         try {
           const pageViewEvent = await buildPageViewEvent({
-            identityMap,
+            identityMap: currentIdentityMap,
             profile: currentProfile,
             pageTitle: pageName,
             pagePath: `/home/${category}`,
@@ -198,7 +204,7 @@ export default function CategoryProductList() {
       };
 
       handleFocus();
-    }, [category, identityMap, products.length])
+    }, [category, products.length, refreshIdentityMap])
   );
 
   const handleProductPress = (productName: string) => {

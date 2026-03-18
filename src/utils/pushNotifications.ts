@@ -26,6 +26,8 @@ export class PushNotificationService {
   private static instance: PushNotificationService;
   private expoPushToken: string | null = null;
   private devicePushToken: string | null = null;
+  private fcmMessageHandlingInitialized = false;
+  private fcmTokenRefreshListenerInitialized = false;
 
   private constructor() {}
 
@@ -112,9 +114,12 @@ export class PushNotificationService {
         // Set up FCM message handling for Android
         if (Platform.OS === 'android' && token && !token.startsWith('Mock')) {
           this.setupFCMMessageHandling();
+          this.setupFCMTokenRefreshHandling();
         }
         
-        // Note: Adobe registration is now handled manually via "Register Token with Adobe Messaging" button
+        if (token && !token.startsWith('Mock')) {
+          await this.tryAutoRegisterTokenWithAdobe(token);
+        }
       } catch (error) {
         console.error('Error getting push token:', error);
         // Fallback to mock token
@@ -128,6 +133,46 @@ export class PushNotificationService {
     }
 
     return token;
+  }
+
+  /**
+   * Initialize push handling after Adobe SDK startup.
+   * If permission already exists, sync the current platform token back to Adobe.
+   */
+  async initialize(): Promise<void> {
+    try {
+      const appId = await getStoredAppId();
+      if (!appId) {
+        console.log('PushNotificationService.initialize(): Adobe App ID not configured; skipping token sync.');
+        return;
+      }
+
+      if (Platform.OS === 'android') {
+        this.setupFCMTokenRefreshHandling();
+      }
+
+      if (!Device.isDevice) {
+        console.log('PushNotificationService.initialize(): push token sync requires a physical device.');
+        return;
+      }
+
+      const { status } = await Notifications.getPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('PushNotificationService.initialize(): notification permission not granted; skipping token sync.');
+        return;
+      }
+
+      const currentToken = await this.getCurrentPlatformToken();
+      if (!currentToken || currentToken.startsWith('Mock')) {
+        console.log('PushNotificationService.initialize(): no valid platform push token available.');
+        return;
+      }
+
+      await this.registerTokenWithAdobe(currentToken);
+      console.log('PushNotificationService.initialize(): current push token synced to Adobe.');
+    } catch (error) {
+      console.error('PushNotificationService.initialize(): failed to sync push token with Adobe:', error);
+    }
   }
 
   /**
@@ -255,6 +300,35 @@ export class PushNotificationService {
     }
   }
 
+  private async tryAutoRegisterTokenWithAdobe(token: string): Promise<void> {
+    try {
+      const appId = await getStoredAppId();
+      if (!appId) {
+        console.log('Adobe App ID not configured yet; skipping automatic token registration.');
+        return;
+      }
+
+      await this.registerTokenWithAdobe(token);
+      console.log('Push token automatically registered with Adobe.');
+    } catch (error) {
+      console.error('Automatic Adobe token registration failed:', error);
+    }
+  }
+
+  private async getCurrentPlatformToken(): Promise<string | null> {
+    if (Platform.OS === 'ios') {
+      const deviceTokenResponse = await Notifications.getDevicePushTokenAsync();
+      this.devicePushToken = deviceTokenResponse.data;
+      this.expoPushToken = this.devicePushToken;
+      return this.devicePushToken;
+    }
+
+    const fcmToken = await messaging().getToken();
+    this.expoPushToken = fcmToken;
+    this.setupFCMMessageHandling();
+    return fcmToken;
+  }
+
   /**
    * Check if an FCM message is from Adobe Messaging
    */
@@ -285,11 +359,16 @@ export class PushNotificationService {
       return;
     }
 
+    if (this.fcmMessageHandlingInitialized) {
+      return;
+    }
+
     try {
       console.log('Setting up FCM message handling...');
+      this.fcmMessageHandlingInitialized = true;
       
       // Set up foreground message listener
-      const unsubscribe = messaging().onMessage(async remoteMessage => {
+      messaging().onMessage(async remoteMessage => {
         console.log('FCM message received in foreground:', remoteMessage);
         
         // Check if this is an Adobe message
@@ -334,7 +413,33 @@ export class PushNotificationService {
 
       console.log('FCM message handlers set up successfully');
     } catch (error) {
+      this.fcmMessageHandlingInitialized = false;
       console.error('Error setting up FCM message handling:', error);
+    }
+  }
+
+  private setupFCMTokenRefreshHandling(): void {
+    if (Platform.OS !== 'android' || this.fcmTokenRefreshListenerInitialized) {
+      return;
+    }
+
+    try {
+      console.log('Setting up FCM token refresh handling...');
+      this.fcmTokenRefreshListenerInitialized = true;
+
+      messaging().onTokenRefresh(async refreshedToken => {
+        console.log('FCM token refreshed:', refreshedToken);
+        this.expoPushToken = refreshedToken;
+
+        try {
+          await this.tryAutoRegisterTokenWithAdobe(refreshedToken);
+        } catch (error) {
+          console.error('Failed to register refreshed FCM token with Adobe:', error);
+        }
+      });
+    } catch (error) {
+      this.fcmTokenRefreshListenerInitialized = false;
+      console.error('Error setting up FCM token refresh handling:', error);
     }
   }
 

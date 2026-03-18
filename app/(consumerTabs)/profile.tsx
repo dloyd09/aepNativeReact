@@ -4,7 +4,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import React, { useCallback, useState, useEffect } from 'react';
 import { View, Button, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
 import { ScrollableContainer } from '../../components/ScrollableContainer';
 import { useTheme } from '@react-navigation/native';
@@ -20,7 +19,6 @@ export default function ProfileTab() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [firstName, setFirstName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [inputFirstName, setInputFirstName] = useState('');
   const [inputEmail, setInputEmail] = useState('');
   const [inputPassword, setInputPassword] = useState('');
@@ -31,20 +29,29 @@ export default function ProfileTab() {
   const { profile, setProfile } = useProfileStorage();
   //console.log('Profile Context:', { profile });
 
-  // Initialize identityMap on component mount
-  useEffect(() => {
-    Identity.getIdentities().then((result) => {
+  const refreshIdentityState = useCallback(async () => {
+    try {
+      const result = await Identity.getIdentities();
       console.log('Profile - Raw identity result:', JSON.stringify(result, null, 2));
-      if (result && result.identityMap) {
-        setIdentityMap(result.identityMap);
-      } else {
-        setIdentityMap(result);
-      }
-    });
 
-    // Also fetch ECID for display
-    Identity.getExperienceCloudId().then(setEcid);
+      const currentIdentityMap = result?.identityMap || result || {};
+      setIdentityMap(currentIdentityMap);
+
+      const currentEcid = await Identity.getExperienceCloudId();
+      setEcid(currentEcid || currentIdentityMap?.ECID?.[0]?.id || '');
+
+      return currentIdentityMap;
+    } catch (identityError) {
+      console.error('Profile - Failed to refresh identities:', identityError);
+      setIdentityMap({});
+      setEcid('');
+      return {};
+    }
   }, []);
+
+  useEffect(() => {
+    refreshIdentityState();
+  }, [refreshIdentityState]);
 
   // Restore login state if profile exists in storage
   useEffect(() => {
@@ -60,8 +67,10 @@ export default function ProfileTab() {
   useFocusEffect(
     useCallback(() => {
       const handleFocus = async () => {
+        const currentIdentityMap = await refreshIdentityState();
+
         // Check if identityMap is ready
-        if (!identityMap || Object.keys(identityMap).length === 0) {
+        if (!currentIdentityMap || Object.keys(currentIdentityMap).length === 0) {
           console.log('Profile - IdentityMap not ready, skipping page view');
           return;
         }
@@ -80,7 +89,7 @@ export default function ProfileTab() {
         // Send page view
         try {
           const pageViewEvent = await buildPageViewEvent({
-            identityMap,
+            identityMap: currentIdentityMap,
             profile: currentProfile,
             pageTitle: 'Profile',
             pagePath: '/profile',
@@ -100,7 +109,7 @@ export default function ProfileTab() {
       };
 
       handleFocus();
-    }, [identityMap])
+    }, [refreshIdentityState])
   );
 
   const handleLogin = async () => {
@@ -112,7 +121,6 @@ export default function ProfileTab() {
     // Update local state
     setFirstName(inputFirstName);
     setEmail(inputEmail);
-    setPassword(''); // Don't store password
     setLoggedIn(true);
     setError('');
 
@@ -125,14 +133,19 @@ export default function ProfileTab() {
 
     // Create an IdentityMap and add the email and ECID identities
     // ECID is primary (stable device identity), email is secondary (user identity)
+    const currentEcid = ecid || await Identity.getExperienceCloudId();
+    setEcid(currentEcid || '');
+
     const newIdentityMap = new IdentityMap();
     const emailIdentity = new IdentityItem(inputEmail, AuthenticatedState.AUTHENTICATED, false);
-    const ecidIdentity = new IdentityItem(ecid, AuthenticatedState.AUTHENTICATED, true);
     newIdentityMap.addItem(emailIdentity, 'Email');
-    newIdentityMap.addItem(ecidIdentity, 'ECID');
+    if (currentEcid) {
+      const ecidIdentity = new IdentityItem(currentEcid, AuthenticatedState.AUTHENTICATED, true);
+      newIdentityMap.addItem(ecidIdentity, 'ECID');
+    }
 
     // Update identities in AEP
-    Identity.updateIdentities(newIdentityMap);
+    await Identity.updateIdentities(newIdentityMap);
     console.log('Email and ECID set as authenticated identities in AEP');
 
     // Save profile to AsyncStorage
@@ -163,12 +176,15 @@ export default function ProfileTab() {
 
       // Update local identityMap state
       setIdentityMap(currentIdentityMap);
+      setEcid(currentIdentityMap?.ECID?.[0]?.id || currentEcid || '');
     } catch (error) {
       console.error('❌ Error sending login event:', error);
     }
   };
 
   const handleLogout = async () => {
+    const currentEmail = email;
+    const currentEcid = ecid;
     // Send logout event BEFORE clearing state
     try {
       const logoutEvent = await buildLogoutEvent({
@@ -184,6 +200,23 @@ export default function ProfileTab() {
       console.error('❌ Error sending logout event:', error);
     }
 
+    try {
+      await UserProfile.removeUserAttributes(['firstName', 'email']);
+      console.log('User profile removed from AEP');
+    } catch (profileError) {
+      console.error('Failed to clear AEP user profile:', profileError);
+    }
+
+    try {
+      if (currentEmail) {
+        const emailIdentity = new IdentityItem(currentEmail);
+        await Identity.removeIdentity(emailIdentity, 'Email');
+        console.log('Email identity removed from AEP');
+      }
+    } catch (identityError) {
+      console.error('Failed to remove AEP email identity:', identityError);
+    }
+
     // Clear local state
     setLoggedIn(false);
     setFirstName('');
@@ -195,6 +228,8 @@ export default function ProfileTab() {
 
     // Clear profile from AsyncStorage
     setProfile({ firstName: '', email: '' });
+    setIdentityMap(currentEcid ? { ECID: [{ id: currentEcid }] } : {});
+    setEcid(currentEcid || '');
     console.log('User logged out and profile cleared');
   };
 

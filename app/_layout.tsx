@@ -8,6 +8,7 @@ import { Assurance } from '@adobe/react-native-aepassurance';
 import { CartProvider } from '../components/CartContext';
 import { Image } from 'react-native';
 import { configureAdobe, getStoredAppId } from '../src/utils/adobeConfig';
+import { pushNotificationService } from '../src/utils/pushNotifications';
 import * as Linking from 'expo-linking';
 import Constants from 'expo-constants';
 
@@ -43,6 +44,7 @@ export default function RootLayout() {
           // Set verbose logging for maximum Assurance debugging
           MobileCore.setLogLevel(LogLevel.VERBOSE);
           await configureAdobe(appId);
+          await pushNotificationService.initialize();
           console.log('Adobe SDK and Assurance initialized successfully');
         } else {
           console.log('No App ID found, Adobe SDK not initialized');
@@ -58,11 +60,8 @@ export default function RootLayout() {
     SplashScreen.hideAsync();
     
     // Set up push notification deep link handler
-    const setupPushHandling = async () => {
-      const { PushNotificationService } = await import('../src/utils/pushNotifications');
-      const pushService = PushNotificationService.getInstance();
-      
-      const responseListener = pushService.addNotificationResponseReceivedListener(response => {
+    const setupPushHandling = () => {
+      const responseListener = pushNotificationService.addNotificationResponseReceivedListener(response => {
         console.log('📲 Push notification tapped:', response);
         console.log('📲 Full notification object:', JSON.stringify(response, null, 2));
         
@@ -117,7 +116,7 @@ export default function RootLayout() {
     };
     
     let listener: any;
-    setupPushHandling().then(l => listener = l);
+    listener = setupPushHandling();
     
     // Cleanup
     return () => {
@@ -144,11 +143,11 @@ export default function RootLayout() {
           }}
         >
           <Drawer.Screen name="index" options={{ title: 'Technical View' }} />
-          <Drawer.Screen name="(techScreens)/AppIdConfigView" options={{ title: 'App ID Config', drawerItemStyle: { display: 'none' } }} />
+          <Drawer.Screen name="(techScreens)/AppIdConfigView" options={{ title: 'App ID Configuration', drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="(techScreens)/AssuranceView" options={{ title: 'Assurance', drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="(techScreens)/ConsentView" options={{ title: 'Consent', drawerItemStyle: { display: 'none' } }} />
-          <Drawer.Screen name="(techScreens)/CoreView" options={{ title: 'Core / Lifecycle / Signal', drawerItemStyle: { display: 'none' } }} />
-          <Drawer.Screen name="(techScreens)/DecisioningItemsView" options={{ title: 'Decisioning Items', drawerItemStyle: { display: 'none' } }} />
+          <Drawer.Screen name="(techScreens)/CoreView" options={{ title: 'Setup', drawerItemStyle: { display: 'none' } }} />
+          <Drawer.Screen name="(techScreens)/DecisioningItemsView" options={{ title: 'Decisioning', drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="(techScreens)/EdgeBridgeView" options={{ title: 'Edge Bridge', drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="(techScreens)/EdgeIdentityView" options={{ title: 'Edge Identity', drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="(techScreens)/EdgeView" options={{ title: 'Edge', drawerItemStyle: { display: 'none' } }} />
@@ -157,7 +156,7 @@ export default function RootLayout() {
           <Drawer.Screen name="(techScreens)/OptimizeView" options={{ title: 'Optimize', drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="(techScreens)/PlacesView" options={{ title: 'Places', drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="(techScreens)/ProfileView" options={{ title: 'User Profile', drawerItemStyle: { display: 'none' } }} />
-          <Drawer.Screen name="(techScreens)/PushNotificationView" options={{ title: 'Push Notifications', drawerItemStyle: { display: 'none' } }} />
+          <Drawer.Screen name="(techScreens)/PushNotificationView" options={{ title: 'Push', drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="(techScreens)/TargetView" options={{ title: 'Target', drawerItemStyle: { display: 'none' } }} />
           <Drawer.Screen name="(consumerTabs)" options={{ title: 'Consumer View' }} />
         </Drawer>

@@ -16,6 +16,7 @@ import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CART_SESSION_STORAGE_KEY = '@cart_session_id';
+const CART_SESSION_OPEN_PENDING_KEY = '@cart_session_open_pending';
 
 interface UseCartSessionReturn {
   /** Current cart session ID (null until loaded) */
@@ -24,6 +25,10 @@ interface UseCartSessionReturn {
   isLoading: boolean;
   /** Generate new cart session ID (call after checkout) */
   resetCartSession: () => Promise<void>;
+  /** If set, a new cart was just created; send commerce.productListOpens then clear via clearProductListOpenPending */
+  productListOpenPending: string | null;
+  /** Call after sending productListOpens for productListOpenPending */
+  clearProductListOpenPending: () => Promise<void>;
 }
 
 /**
@@ -53,6 +58,7 @@ interface UseCartSessionReturn {
 export const useCartSession = (): UseCartSessionReturn => {
   const [cartSessionId, setCartSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [productListOpenPending, setProductListOpenPending] = useState<string | null>(null);
 
   /**
    * Generate a new unique cart session ID
@@ -78,11 +84,13 @@ export const useCartSession = (): UseCartSessionReturn => {
         console.log('Loaded existing cart session:', existingId);
         setCartSessionId(existingId);
       } else {
-        // Generate new session
+        // Generate new session — mark so app can send commerce.productListOpens
         const newId = generateCartSessionId();
         await AsyncStorage.setItem(CART_SESSION_STORAGE_KEY, newId);
+        await AsyncStorage.setItem(CART_SESSION_OPEN_PENDING_KEY, newId);
         console.log('Created new cart session:', newId);
         setCartSessionId(newId);
+        setProductListOpenPending(newId);
       }
     } catch (error) {
       console.error('Error loading cart session:', error);
@@ -110,14 +118,35 @@ export const useCartSession = (): UseCartSessionReturn => {
   };
 
   // Load session on mount
+  const clearProductListOpenPending = async () => {
+    try {
+      await AsyncStorage.removeItem(CART_SESSION_OPEN_PENDING_KEY);
+      setProductListOpenPending(null);
+    } catch (e) {
+      console.error('Error clearing product list open pending:', e);
+    }
+  };
+
   useEffect(() => {
     loadOrCreateCartSession();
   }, []);
+
+  // Sync productListOpenPending from storage (e.g. after restart with pending)
+  useEffect(() => {
+    if (isLoading || !cartSessionId) return;
+    const check = async () => {
+      const pending = await AsyncStorage.getItem(CART_SESSION_OPEN_PENDING_KEY);
+      if (pending === cartSessionId) setProductListOpenPending(pending);
+    };
+    check();
+  }, [isLoading, cartSessionId]);
 
   return {
     cartSessionId,
     isLoading,
     resetCartSession,
+    productListOpenPending,
+    clearProductListOpenPending,
   };
 };
 

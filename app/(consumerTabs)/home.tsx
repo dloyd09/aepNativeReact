@@ -43,26 +43,32 @@ export default function HomeTab() {
   const previousRouteName = navigationState.routes[navigationState.index - 1]?.name || 'Unknown';
   
   const [identityMap, setIdentityMap] = useState({});
+  const refreshIdentityMap = useCallback(async () => {
+    const result = await Identity.getIdentities();
+    if (result && (result as any).identityMap) {
+      setIdentityMap((result as any).identityMap);
+      return (result as any).identityMap;
+    }
+
+    setIdentityMap(result);
+    return result;
+  }, []);
 
   // Initialize identityMap on component mount
   useEffect(() => {
-    Identity.getIdentities().then((result) => {
-      if (result && result.identityMap) {
-        setIdentityMap(result.identityMap);
-      } else {
-        setIdentityMap(result);
-      }
-    }).catch((error) => {
+    refreshIdentityMap().catch((error) => {
       console.error('Home - Error fetching identities:', error);
     });
-  }, []);
+  }, [refreshIdentityMap]);
 
   // Send page view when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       const handleFocus = async () => {
+        const currentIdentityMap = await refreshIdentityMap();
+
         // Check if identityMap is ready
-        if (!identityMap || Object.keys(identityMap).length === 0) {
+        if (!currentIdentityMap || Object.keys(currentIdentityMap).length === 0) {
           console.log('Home - IdentityMap not ready, skipping page view');
           return;
         }
@@ -81,7 +87,7 @@ export default function HomeTab() {
         // Send page view
         try {
           const pageViewEvent = await buildPageViewEvent({
-            identityMap,
+            identityMap: currentIdentityMap,
             profile: currentProfile,
             pageTitle: 'Home',
             pagePath: '/home',
@@ -99,7 +105,7 @@ export default function HomeTab() {
       };
 
       handleFocus();
-    }, [identityMap])
+    }, [refreshIdentityMap])
   );
 
   const handleCategoryPress = (categoryKey: string) => {

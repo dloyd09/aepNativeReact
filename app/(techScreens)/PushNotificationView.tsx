@@ -11,7 +11,8 @@ governing permissions and limitations under the License.
 */
 
 import React, { useState, useEffect } from 'react';
-import { Button, View, ScrollView, Alert, Platform } from 'react-native';
+import { Button, ScrollView, Alert, Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
@@ -19,13 +20,33 @@ import { useTheme } from '@react-navigation/native';
 import { pushNotificationService } from '../../src/utils/pushNotifications';
 import styles from '../../styles/styles';
 
+const TEST_PUSH_PAYLOAD = {
+  adb_title: 'Push Capability Test',
+  adb_body: 'Local notification triggered from the technical push screen.',
+  adb_uri: 'myapp://(consumerTabs)/profile',
+  source: 'technical-push-test',
+  templateData: {
+    firstName: 'Test User',
+    campaign: 'local-push-validation',
+  },
+};
+
 function PushNotificationView() {
   const router = useRouter();
   const [log, setLog] = useState('');
   const [pushToken, setPushToken] = useState<string | null>(null);
+  const [permissionStatus, setPermissionStatus] = useState<string>('unknown');
   const theme = useTheme();
 
   useEffect(() => {
+    const loadCurrentState = async () => {
+      const permissions = await Notifications.getPermissionsAsync();
+      setPermissionStatus(permissions.status);
+      setPushToken(pushNotificationService.getExpoPushToken());
+    };
+
+    loadCurrentState();
+
     // Set up notification listeners when component mounts
     const notificationListener = pushNotificationService.addNotificationReceivedListener(notification => {
       console.log('Notification received:', notification);
@@ -47,10 +68,12 @@ function PushNotificationView() {
   const registerForNotifications = async () => {
     try {
       const token = await pushNotificationService.registerForPushNotifications();
+      const permissions = await Notifications.getPermissionsAsync();
+      setPermissionStatus(permissions.status);
       if (token) {
         setPushToken(token);
-        setLog(prev => prev + '\nSuccessfully registered for push notifications');
-        Alert.alert('Success', 'Registered for push notifications!');
+        setLog(prev => prev + '\nSuccessfully registered for push notifications and triggered Adobe auto-sync');
+        Alert.alert('Success', 'Registered for push notifications. Adobe token sync runs automatically.');
       } else {
         setLog(prev => prev + '\nFailed to register for push notifications');
         Alert.alert('Error', 'Failed to register for push notifications');
@@ -69,77 +92,6 @@ function PushNotificationView() {
     } else {
       setLog(prev => prev + '\nNo push token available');
       Alert.alert('No Token', 'No push token available. Register for notifications first.');
-    }
-  };
-
-  const sendTestNotification = async () => {
-    try {
-      await pushNotificationService.scheduleLocalNotification(
-        'Test Notification',
-        'This is a test notification from your app!',
-        { test: true, timestamp: Date.now() }
-      );
-      setLog(prev => prev + '\nTest notification scheduled');
-      Alert.alert('Success', 'Test notification sent!');
-    } catch (error) {
-      console.error('Error sending test notification:', error);
-      setLog(prev => prev + '\nError sending test notification: ' + error);
-    }
-  };
-
-  const sendDelayedNotification = async () => {
-    try {
-      await pushNotificationService.scheduleLocalNotification(
-        'Delayed Notification',
-        'This notification was scheduled 5 seconds ago!',
-        { delayed: true, timestamp: Date.now() }
-      );
-      setLog(prev => prev + '\nDelayed notification scheduled (5 seconds)');
-      Alert.alert('Success', 'Delayed notification scheduled for 5 seconds from now!');
-    } catch (error) {
-      console.error('Error sending delayed notification:', error);
-      setLog(prev => prev + '\nError sending delayed notification: ' + error);
-    }
-  };
-
-  const getScheduledNotifications = async () => {
-    try {
-      const notifications = await pushNotificationService.getScheduledNotifications();
-      setLog(prev => prev + '\nScheduled notifications: ' + notifications.length);
-      Alert.alert('Scheduled Notifications', `You have ${notifications.length} scheduled notifications`);
-    } catch (error) {
-      console.error('Error getting scheduled notifications:', error);
-      setLog(prev => prev + '\nError getting scheduled notifications: ' + error);
-    }
-  };
-
-  const cancelAllNotifications = async () => {
-    try {
-      await pushNotificationService.cancelAllScheduledNotifications();
-      setLog(prev => prev + '\nAll scheduled notifications cancelled');
-      Alert.alert('Success', 'All scheduled notifications cancelled!');
-    } catch (error) {
-      console.error('Error cancelling notifications:', error);
-      setLog(prev => prev + '\nError cancelling notifications: ' + error);
-    }
-  };
-
-  const registerWithAdobe = async () => {
-    try {
-      const success = await pushNotificationService.registerCurrentTokenWithAdobe();
-      if (success) {
-        setLog(prev => prev + '\nToken registered with Adobe services successfully');
-        Alert.alert('Success', 'Token registered with Adobe services!');
-      } else {
-        setLog(prev => prev + '\nFailed to register token with Adobe services');
-        Alert.alert(
-          'Adobe Registration Failed', 
-          'Failed to register token with Adobe services. Make sure you have configured the Adobe App ID in the App ID Configuration screen first.'
-        );
-      }
-    } catch (error) {
-      console.error('Error registering with Adobe:', error);
-      setLog(prev => prev + '\nError registering with Adobe: ' + error);
     }
   };
 
@@ -162,43 +114,71 @@ function PushNotificationView() {
     }
   };
 
+  const triggerLocalPushTest = async () => {
+    try {
+      await pushNotificationService.scheduleLocalNotification(
+        TEST_PUSH_PAYLOAD.adb_title,
+        TEST_PUSH_PAYLOAD.adb_body,
+        TEST_PUSH_PAYLOAD
+      );
+
+      setLog(prev => prev + '\nTriggered local push test with payload: ' + JSON.stringify(TEST_PUSH_PAYLOAD));
+      Alert.alert(
+        'Test Push Sent',
+        'A local test notification was scheduled immediately. This validates app-side push handling and deep-link parsing.'
+      );
+    } catch (error) {
+      console.error('Error triggering local push test:', error);
+      setLog(prev => prev + '\nError triggering local push test: ' + error);
+      Alert.alert('Error', 'Failed to trigger local push test notification.');
+    }
+  };
+
 
   return (
     <ThemedView style={styles.container}>
       <ScrollView contentContainerStyle={{marginTop: 75}}>
         <Button onPress={router.back} title="Go to main page" />
         <ThemedText style={styles.welcome}>Push Notifications</ThemedText>
+        <ThemedText style={{ marginTop: 8, color: theme.colors.text, fontSize: 13, textAlign: 'center' }}>
+          Push token registration now auto-syncs to Adobe after permission grant and app startup.
+        </ThemedText>
+
+        <ThemedText style={{ marginTop: 20, color: theme.colors.text, fontSize: 16, fontWeight: 'bold' }}>
+          Current Status
+        </ThemedText>
+        <ThemedText style={{ marginTop: 6, color: theme.colors.text, fontSize: 14 }}>
+          Permission: {permissionStatus}
+        </ThemedText>
+        <ThemedText style={{ marginTop: 4, color: theme.colors.text, fontSize: 14 }}>
+          Token Type: {Platform.OS === 'ios' ? 'APNs Device Token' : 'FCM Token'}
+        </ThemedText>
         
         <ThemedText style={{ marginTop: 16, color: theme.colors.text, fontSize: 16, fontWeight: 'bold' }}>
-          {Platform.OS === 'ios' ? 'Push Notification Setup (iOS)' : 'FCM Push Notification Setup (Android)'}
+          {Platform.OS === 'ios' ? 'Push Notification Setup (iOS)' : 'Push Notification Setup (Android)'}
         </ThemedText>
-        <Button title={Platform.OS === 'ios' ? 'Register for Push Notifications' : 'Register for FCM Push Notifications'} onPress={registerForNotifications} />
-        <Button title={Platform.OS === 'ios' ? 'Get Push Token' : 'Get FCM Token'} onPress={getCurrentToken} />
-        
+        <Button title={Platform.OS === 'ios' ? 'Request Push Permission / Token' : 'Request FCM Permission / Token'} onPress={registerForNotifications} />
+        <Button title={Platform.OS === 'ios' ? 'Show Current APNs Token' : 'Show Current FCM Token'} onPress={getCurrentToken} />
+
         <ThemedText style={{ marginTop: 24, color: theme.colors.text, fontSize: 16, fontWeight: 'bold' }}>
-          Test Notifications
-        </ThemedText>
-        <Button title="Send Test Notification" onPress={sendTestNotification} />
-        <Button title="Send Delayed Notification (5s)" onPress={sendDelayedNotification} />
-        
-        <ThemedText style={{ marginTop: 24, color: theme.colors.text, fontSize: 16, fontWeight: 'bold' }}>
-          Notification Management
-        </ThemedText>
-        <Button title="Get Scheduled Notifications" onPress={getScheduledNotifications} />
-        <Button title="Cancel All Notifications" onPress={cancelAllNotifications} />
-        
-        <ThemedText style={{ marginTop: 24, color: theme.colors.text, fontSize: 16, fontWeight: 'bold' }}>
-          Adobe Services Integration
+          Local Push Test
         </ThemedText>
         <ThemedText style={{ marginTop: 8, color: theme.colors.text, fontSize: 12, fontStyle: 'italic' }}>
-          Note: Adobe App ID must be configured first in the App ID Configuration screen
+          Sends a local notification with a basic Adobe-style JSON payload so you can verify display, tap handling, and deep linking from the device itself.
         </ThemedText>
-        <Button title="Register Token with Adobe Services" onPress={registerWithAdobe} />
+        <Button title="Trigger Local Test Push" onPress={triggerLocalPushTest} />
+        
+        <ThemedText style={{ marginTop: 24, color: theme.colors.text, fontSize: 16, fontWeight: 'bold' }}>
+          Recovery
+        </ThemedText>
+        <ThemedText style={{ marginTop: 8, color: theme.colors.text, fontSize: 12, fontStyle: 'italic' }}>
+          Use recovery only when you need to clear the token/profile association in Adobe.
+        </ThemedText>
         <Button title="Clear Adobe Push Tokens (Fix Mismatch)" onPress={clearAdobePushTokens} color="#ff6b6b" />
         
         {pushToken && (
           <ThemedText style={{ marginTop: 16, color: theme.colors.text, fontSize: 14, textAlign: 'center' }}>
-            {Platform.OS === 'ios' ? 'Expo Push Token' : 'FCM Token'}: {pushToken.substring(0, 20)}...
+            {Platform.OS === 'ios' ? 'APNs Device Token' : 'FCM Token'}: {pushToken.substring(0, 20)}...
             {Platform.OS === 'android' && (
               <ThemedText style={{ color: pushToken.startsWith('Mock') ? '#ff6b6b' : '#51cf66', fontSize: 12 }}>
                 {'\n'}({pushToken.startsWith('Mock') ? 'Mock Token' : 'Real FCM Token'})

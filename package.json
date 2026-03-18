@@ -1,7 +1,7 @@
 {
   "name": "WeRetail",
   "main": "expo-router/entry",
-  "version": "1.0.0",
+  "version": "1.0.6",
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
@@ -9,10 +9,18 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "test": "jest --watchAll",
+    "test:ci": "jest --ci --runInBand",
     "lint": "expo lint"
   },
   "jest": {
-    "preset": "jest-expo"
+    "preset": "jest-expo",
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/$1"
+    },
+    "testMatch": [
+      "**/__tests__/**/*.(test|spec).(ts|tsx|js)",
+      "**/*.(test|spec).(ts|tsx|js)"
+    ]
   },
   "dependencies": {
     "@adobe/react-native-aepassurance": "^7.0.0",

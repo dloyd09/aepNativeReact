@@ -3,7 +3,9 @@ import { Button, Text, View, TextInput, ScrollView, Alert, NativeModules } from 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MobileCore } from '@adobe/react-native-aepcore';
 import { Optimize } from '@adobe/react-native-aepoptimize';
+import { Places } from '@adobe/react-native-aepplaces';
 import { Target } from '@adobe/react-native-aeptarget';
+import { UserProfile } from '@adobe/react-native-aepuserprofile';
 import styles from '../../styles/styles';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '../../components/ThemedView';
@@ -94,7 +96,7 @@ const AppIdConfigView = () => {
         // Clear other potential caches
         try {
           // Clear User Profile data
-          UserProfile.removeUserAttributes();
+          await UserProfile.removeUserAttributes([]);
           console.log('User Profile data cleared');
         } catch (error) {
           console.log('User Profile clearing not available or failed');
@@ -188,6 +190,9 @@ const AppIdConfigView = () => {
         <Button onPress={() => router.back()} title="Go to main page" />
         <ThemedText style={styles.welcome}>Adobe App ID Configuration</ThemedText>
         <ThemedText style={styles.text}>Enter your Adobe Launch App ID:</ThemedText>
+        <ThemedText style={[styles.text, { marginHorizontal: 16, textAlign: 'center', fontSize: 13 }]}>
+          The App ID is stored locally on the device. Saving it reconfigures the Adobe SDK. Resetting it also clears Adobe identities and related caches for this app.
+        </ThemedText>
         <TextInput
           style={{
             height: 40,
@@ -204,9 +209,12 @@ const AppIdConfigView = () => {
         />
         <Button title="Save App ID" onPress={saveAppId} />
         <View style={{ marginTop: 10 }} />
-        <Button title="Clear App ID" onPress={clearAppId} />
+        <Button title="Reset App ID and Adobe State" onPress={clearAppId} />
         <ThemedText style={styles.text}>
           Current App ID: {appId || 'Not configured'}
+        </ThemedText>
+        <ThemedText style={[styles.text, { marginHorizontal: 16, textAlign: 'center', fontSize: 12, opacity: 0.8 }]}>
+          This reset is broader than just removing the App ID. It also clears local Adobe-related caches and resets identities for a clean restart.
         </ThemedText>
       </ScrollView>
     </ThemedView>
