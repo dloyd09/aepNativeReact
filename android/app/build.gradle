@@ -1,30 +1,9 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
-apply plugin: 'com.google.gms.google-services'
+apply plugin: "com.google.gms.google-services"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
-
-static def versionToNumber(major, minor, patch) {
-  return patch * 100 + minor * 10000 + major * 1000000
-}
-
-def getRNVersion() {
-  def version = providers.exec {
-    workingDir(projectDir)
-    commandLine("node", "-e", "console.log(require('react-native/package.json').version);")
-  }.standardOutput.asText.get().trim()
-
-  def coreVersion = version.split("-")[0]
-  def (major, minor, patch) = coreVersion.tokenize('.').collect { it.toInteger() }
-
-  return versionToNumber(
-      major,
-      minor,
-      patch
-  )
-}
-def rnVersion = getRNVersion()
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -36,18 +15,19 @@ react {
     hermesCommand = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsolutePath() + "/sdks/hermesc/%OS-BIN%/hermesc"
     codegenDir = new File(["node", "--print", "require.resolve('@react-native/codegen/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
 
+    enableBundleCompression = (findProperty('android.enableBundleCompression') ?: false).toBoolean()
     // Use Expo CLI to bundle the app, this ensures the Metro config
     // works correctly with Expo projects.
     cliFile = new File(["node", "--print", "require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })"].execute(null, rootDir).text.trim())
     bundleCommand = "export:embed"
 
     /* Folders */
-    //   The root of your project, i.e. where "package.json" lives. Default is '..'
-    // root = file("../")
-    //   The folder where the react-native NPM package is. Default is ../node_modules/react-native
-    // reactNativeDir = file("../node_modules/react-native")
-    //   The folder where the react-native Codegen package is. Default is ../node_modules/@react-native/codegen
-    // codegenDir = file("../node_modules/@react-native/codegen")
+     //   The root of your project, i.e. where "package.json" lives. Default is '../..'
+    // root = file("../../")
+    //   The folder where the react-native NPM package is. Default is ../../node_modules/react-native
+    // reactNativeDir = file("../../node_modules/react-native")
+    //   The folder where the react-native Codegen package is. Default is ../../node_modules/@react-native/codegen
+    // codegenDir = file("../../node_modules/@react-native/codegen")
 
     /* Variants */
     //   The list of variants to that are debuggable. For those we're going to
@@ -80,10 +60,8 @@ react {
     //   The list of flags to pass to the Hermes compiler. By default is "-O", "-output-source-map"
     // hermesFlags = ["-O", "-output-source-map"]
 
-    if (rnVersion >= versionToNumber(0, 75, 0)) {
-        /* Autolinking */
-        autolinkLibrariesWithApp()
-    }
+    /* Autolinking */
+    autolinkLibrariesWithApp()
 }
 
 /**
@@ -102,26 +80,7 @@ def enableProguardInReleaseBuilds = (findProperty('android.enableProguardInRelea
  * give correct results when using with locales other than en-US. Note that
  * this variant is about 6MiB larger per architecture than default.
  */
-def jscFlavor = 'org.webkit:android-jsc:+'
-
-// Auto-versioning system
-def versionPropsFile = file('../version.properties')
-def versionProps = new Properties()
-
-if (versionPropsFile.exists()) {
-    versionProps.load(new FileInputStream(versionPropsFile))
-} else {
-    versionProps['VERSION_CODE'] = "1"
-    versionProps['VERSION_NAME'] = "1.0.1"
-}
-
-def getVersionCode = { ->
-    return versionProps['VERSION_CODE'].toInteger()
-}
-
-def getVersionName = { ->
-    return versionProps['VERSION_NAME']
-}
+def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
     ndkVersion rootProject.ext.ndkVersion
@@ -134,8 +93,8 @@ android {
         applicationId 'com.cmtBootCamp.AEPSampleAppNewArchEnabled'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode getVersionCode()
-        versionName getVersionName()
+        versionCode 2
+        versionName "1.0.7"
     }
     signingConfigs {
         debug {
@@ -159,18 +118,18 @@ android {
             crunchPngs (findProperty('android.enablePngCrunchInReleaseBuilds')?.toBoolean() ?: true)
         }
     }
-    
-    applicationVariants.all { variant ->
-        variant.outputs.all { output ->
-            def versionName = variant.versionName
-            def buildType = variant.buildType.name
-            outputFileName = "WeRetail-${versionName}-${buildType}.apk"
-        }
-    }
-    
     packagingOptions {
         jniLibs {
             useLegacyPackaging (findProperty('expo.useLegacyPackaging')?.toBoolean() ?: false)
+        }
+    }
+    androidResources {
+        ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            outputFileName = "WeRetail-${variant.versionName}-${variant.buildType.name}.apk"
         }
     }
 }
@@ -198,6 +157,7 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+    implementation project(':react-native-reanimated')
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
@@ -205,15 +165,15 @@ dependencies {
 
     if (isGifEnabled) {
         // For animated gif support
-        implementation("com.facebook.fresco:animated-gif:${reactAndroidLibs.versions.fresco.get()}")
+        implementation("com.facebook.fresco:animated-gif:${expoLibs.versions.fresco.get()}")
     }
 
     if (isWebpEnabled) {
         // For webp support
-        implementation("com.facebook.fresco:webpsupport:${reactAndroidLibs.versions.fresco.get()}")
+        implementation("com.facebook.fresco:webpsupport:${expoLibs.versions.fresco.get()}")
         if (isWebpAnimatedEnabled) {
             // Animated webp support
-            implementation("com.facebook.fresco:animated-webp:${reactAndroidLibs.versions.fresco.get()}")
+            implementation("com.facebook.fresco:animated-webp:${expoLibs.versions.fresco.get()}")
         }
     }
 
@@ -221,119 +181,5 @@ dependencies {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
-    }
-}
-
-if (rnVersion < versionToNumber(0, 75, 0)) {
-    apply from: new File(["node", "--print", "require.resolve('@react-native-community/cli-platform-android/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim(), "../native_modules.gradle");
-    applyNativeModulesAppBuildGradle(project)
-}
-
-// Helper function to update app.json version
-def updateAppJson(String newVersion) {
-    def appJsonFile = file('../../app.json')
-    def appJsonText = appJsonFile.text
-    def updatedText = appJsonText.replaceAll(/"version":\s*"[^"]*"/, "\"version\": \"${newVersion}\"")
-    appJsonFile.write(updatedText)
-    println "   Updated app.json to version ${newVersion}"
-}
-
-// Version increment tasks
-task incrementVersion {
-    description = 'Increments the patch version (1.0.1 → 1.0.2)'
-    group = 'versioning'
-    doLast {
-        def versionFile = file('../version.properties')
-        def props = new Properties()
-        props.load(new FileInputStream(versionFile))
-        
-        def versionCode = props['VERSION_CODE'].toInteger() + 1
-        def versionName = props['VERSION_NAME']
-        def (major, minor, patch) = versionName.tokenize('.').collect { it.toInteger() }
-        
-        patch++
-        def newVersion = "${major}.${minor}.${patch}"
-        
-        props['VERSION_CODE'] = String.valueOf(versionCode)
-        props['VERSION_NAME'] = String.valueOf(newVersion)
-        versionFile.withWriter { writer ->
-            props.store(writer, "Auto-incremented by gradle task")
-        }
-        
-        // Also update app.json
-        updateAppJson(newVersion)
-        
-        println "✅ Version incremented to ${newVersion} (code: ${versionCode})"
-    }
-}
-
-task incrementMinor {
-    description = 'Increments the minor version (1.0.1 → 1.1.0)'
-    group = 'versioning'
-    doLast {
-        def versionFile = file('../version.properties')
-        def props = new Properties()
-        props.load(new FileInputStream(versionFile))
-        
-        def versionCode = props['VERSION_CODE'].toInteger() + 1
-        def versionName = props['VERSION_NAME']
-        def (major, minor, patch) = versionName.tokenize('.').collect { it.toInteger() }
-        
-        minor++
-        patch = 0
-        def newVersion = "${major}.${minor}.${patch}"
-        
-        props['VERSION_CODE'] = String.valueOf(versionCode)
-        props['VERSION_NAME'] = String.valueOf(newVersion)
-        versionFile.withWriter { writer ->
-            props.store(writer, "Auto-incremented by gradle task")
-        }
-        
-        // Also update app.json
-        updateAppJson(newVersion)
-        
-        println "✅ Version incremented to ${newVersion} (code: ${versionCode})"
-    }
-}
-
-task incrementMajor {
-    description = 'Increments the major version (1.0.1 → 2.0.0)'
-    group = 'versioning'
-    doLast {
-        def versionFile = file('../version.properties')
-        def props = new Properties()
-        props.load(new FileInputStream(versionFile))
-        
-        def versionCode = props['VERSION_CODE'].toInteger() + 1
-        def versionName = props['VERSION_NAME']
-        def (major, minor, patch) = versionName.tokenize('.').collect { it.toInteger() }
-        
-        major++
-        minor = 0
-        patch = 0
-        def newVersion = "${major}.${minor}.${patch}"
-        
-        props['VERSION_CODE'] = String.valueOf(versionCode)
-        props['VERSION_NAME'] = String.valueOf(newVersion)
-        versionFile.withWriter { writer ->
-            props.store(writer, "Auto-incremented by gradle task")
-        }
-        
-        // Also update app.json
-        updateAppJson(newVersion)
-        
-        println "✅ Version incremented to ${newVersion} (code: ${versionCode})"
-    }
-}
-
-task currentVersion {
-    description = 'Displays the current version'
-    group = 'versioning'
-    doLast {
-        def versionFile = file('../version.properties')
-        def props = new Properties()
-        props.load(new FileInputStream(versionFile))
-        
-        println "Current version: ${props['VERSION_NAME']} (code: ${props['VERSION_CODE']})"
     }
 }

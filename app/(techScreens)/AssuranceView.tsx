@@ -5,7 +5,7 @@ import { Assurance } from '@adobe/react-native-aepassurance';
 import { MobileCore } from '@adobe/react-native-aepcore';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@react-navigation/native';
-import { ThemedView } from '../../components/ThemedView';
+import { TechnicalScreen } from '../../components/TechnicalScreen';
 import { ThemedText } from '../../components/ThemedText';
 import { getStoredAppId } from '@/src/utils/adobeConfig';
 
@@ -96,9 +96,7 @@ const AssuranceView = () => {
   };
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={{ marginTop: 75, paddingBottom: 100 }}>
-        <Button onPress={() => router.back()} title="Go to main page" />
+    <TechnicalScreen onBack={() => router.back()}>
         <ThemedText style={styles.welcome}>Assurance v{version}</ThemedText>
         <ThemedText style={styles.helper}>
           This screen is for session connection and compact diagnostics only. The only local value it persists is the saved Assurance URL.
@@ -128,8 +126,7 @@ const AssuranceView = () => {
         <Button title="Clear Saved Session" onPress={clearAssuranceSession} />
         <View style={{ marginTop: 10 }} />
         <Button title="Refresh Session Status" onPress={refreshSessionStatus} />
-      </ScrollView>
-    </ThemedView>
+    </TechnicalScreen>
   );
 };
 

@@ -16,6 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { MobileCore, LogLevel } from '@adobe/react-native-aepcore';
 import { Optimize, DecisionScope, Proposition } from '@adobe/react-native-aepoptimize';
+import { TechnicalScreen } from '@/components/TechnicalScreen';
 import { ThemedText } from '@/components/ThemedText';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import { useRouter } from 'expo-router';
@@ -405,7 +406,7 @@ export default function OptimizeView() {
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 20, backgroundColor }}>
+    <TechnicalScreen onBack={() => router.back()} contentContainerStyle={{ paddingTop: 20, backgroundColor }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <TouchableOpacity onPress={() => router.back()}>
           <ThemedText style={{ fontSize: 16, color: tintColor }}>← Back</ThemedText>
@@ -511,7 +512,7 @@ export default function OptimizeView() {
           <ThemedText>No proposition yet.</ThemedText>
         )}
       </View>
-    </ScrollView>
+    </TechnicalScreen>
   );
 }
 

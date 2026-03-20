@@ -18,6 +18,7 @@ pnpm-debug.log*
 android/.gradle/
 android/app/build/
 android/.idea/
+.rnr/
 *.iml
 *.keystore
 
@@ -32,6 +33,7 @@ ios/Podfile.lock
 .vscode/
 .idea/*
 !/.idea/file_to_keep.xml
+.claude/
 
 # OS-specific
 .DS_Store
@@ -49,6 +51,8 @@ Thumbs.db
 *.orig.*
 *.log
 .env
+feedback.json
+crashlog.crash
 
 *.AuthKey_*.p8
 

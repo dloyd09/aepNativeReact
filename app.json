@@ -2,7 +2,8 @@
   "expo": {
     "name": "WeRetail",
     "slug": "WeRetail",
-    "version": "1.0.6",
+    "version": "1.0.8",
+    "newArchEnabled": false,
     "orientation": "portrait",
     "icon": "./assets/images/productImages/EA-App-icon.png",
     "scheme": "myapp",
@@ -13,9 +14,10 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "buildNumber": "6",
+      "buildNumber": "8",
       "supportsTablet": true,
       "bundleIdentifier": "com.cmtBootCamp.AEPSampleAppNewArchEnabled",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -25,6 +27,7 @@
         "foregroundImage": "./assets/images/productImages/EA-App-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "googleServicesFile": "./google-services.json",
       "package": "com.cmtBootCamp.AEPSampleAppNewArchEnabled"
     },
     "web": {
@@ -38,11 +41,12 @@
         "expo-build-properties",
         {
           "ios": {
-            "newArchEnabled": false,
             "useFrameworks": "static"
           },
           "android": {
-            "newArchEnabled": false
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "minSdkVersion": 24
           }
         }
       ],
@@ -50,9 +54,11 @@
         "expo-notifications",
         {
           "icon": "./assets/images/productImages/EA-App-icon.png",
-          "color": "#ffffff"
+          "color": "#ffffff",
+          "mode": "production"
         }
-      ]
+      ],
+      "@react-native-firebase/app"
     ],
     "experiments": {
       "typedRoutes": true

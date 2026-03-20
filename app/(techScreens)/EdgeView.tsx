@@ -15,7 +15,7 @@ import {Button, View, ScrollView} from 'react-native';
 import {Edge, ExperienceEvent} from '@adobe/react-native-aepedge';
 import styles from '../../styles/styles';
 import {  useRouter } from 'expo-router';
-import { ThemedView } from '../../components/ThemedView';
+import { TechnicalScreen } from '../../components/TechnicalScreen';
 import { ThemedText } from '../../components/ThemedText';
 import { useTheme } from '@react-navigation/native';
 
@@ -112,9 +112,7 @@ const EdgeView = () => {
   }
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={{marginTop: 75}}>
-        <Button  onPress={router.back} title="Go to main page" />
+    <TechnicalScreen onBack={router.back}>
         <ThemedText style={styles.welcome}>Edge v{version}</ThemedText>
         <Button
           title="sendEventWithParams"
@@ -148,8 +146,7 @@ const EdgeView = () => {
         />
         <Button title="getLocationHint()" onPress={() => getLocationHint()} />
         <ThemedText style={styles.text}>Location Hint: {locationHint}</ThemedText>
-      </ScrollView>
-    </ThemedView>
+    </TechnicalScreen>
   );
 };
 

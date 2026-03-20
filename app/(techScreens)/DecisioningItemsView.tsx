@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { Messaging } from '@adobe/react-native-aepmessaging';
 import { ThemedText } from '@/components/ThemedText';
+import { TechnicalScreen } from '@/components/TechnicalScreen';
 import { ThemedView } from '@/components/ThemedView';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import styles from '../../styles/styles';
@@ -135,9 +136,7 @@ export default function DecisioningItemsView() {
   }
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={{ marginTop: 75, paddingBottom: 100, paddingHorizontal: 20 }}>
-        <Button title="Go to main page" onPress={() => router.back()} />
+    <TechnicalScreen onBack={() => router.back()}>
         <ThemedText style={styles.welcome}>Decisioning</ThemedText>
 
         <ThemedText style={{ marginTop: 8, color: textColor, fontSize: 13, textAlign: 'center' }}>
@@ -209,7 +208,6 @@ export default function DecisioningItemsView() {
             </ScrollView>
           </View>
         ) : null}
-      </ScrollView>
-    </ThemedView>
+    </TechnicalScreen>
   );
 }

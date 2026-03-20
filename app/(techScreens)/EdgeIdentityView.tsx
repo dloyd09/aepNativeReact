@@ -21,7 +21,7 @@ import {
 import styles from '../../styles/styles';
 import {NavigationProps} from '../../types/props';
 import { useRouter } from 'expo-router';
-import { ThemedView } from '../../components/ThemedView';
+import { TechnicalScreen } from '../../components/TechnicalScreen';
 import { ThemedText } from '../../components/ThemedText';
 import { useTheme } from '@react-navigation/native';
 
@@ -90,9 +90,7 @@ const EdgeIdentityView = ({navigation}: NavigationProps) => {
   const router = useRouter();
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={{marginTop: 75}}>
-        <Button onPress={() => router.back()} title="Go to main page" />
+    <TechnicalScreen onBack={() => router.back()}>
         <ThemedText style={styles.welcome}>EdgeIdentity v{version}</ThemedText>
         <Button title="getExperienceCloudId()" onPress={getExperienceCloudId} />
         <Button title="updateIdentities()" onPress={updateIdentities} />
@@ -103,8 +101,7 @@ const EdgeIdentityView = ({navigation}: NavigationProps) => {
         <ThemedText>{identities}</ThemedText>
         <ThemedText>{ecid}</ThemedText>
         <ThemedText>{urlvariables}</ThemedText>
-      </ScrollView>
-    </ThemedView>
+    </TechnicalScreen>
   );
 };
 

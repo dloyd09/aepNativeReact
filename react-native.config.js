@@ -1,15 +1,9 @@
 module.exports = {
-    reactNativePath: './node_modules/react-native',
-    project: {
-      ios: {
-        // 👇 This ensures new-arch generation happens properly
-        sourceDir: './ios',
-      },
+  project: {
+    android: {
+      packageName: 'com.cmtBootCamp.AEPSampleAppNewArchEnabled',
     },
-    assets: [],
-  dependencies: {},
-  commands: [],
-  platforms: {},
-  newArchEnabled: true,  // ✅ Force Fabric generation
-  };
-  
+    ios: {},
+  },
+  assets: [],
+};

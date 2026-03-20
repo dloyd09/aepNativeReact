@@ -1,7 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
-import messaging from '@react-native-firebase/messaging';
 import { Messaging } from '@adobe/react-native-aepmessaging';
 import { MobileCore } from '@adobe/react-native-aepcore';
 import { getStoredAppId } from './adobeConfig';
@@ -36,6 +35,19 @@ export class PushNotificationService {
       PushNotificationService.instance = new PushNotificationService();
     }
     return PushNotificationService.instance;
+  }
+
+  private getFirebaseMessagingModule(): any | null {
+    if (Platform.OS !== 'android') {
+      return null;
+    }
+
+    try {
+      return require('@react-native-firebase/messaging').default;
+    } catch (error) {
+      console.error('Failed to load Firebase Messaging module:', error);
+      return null;
+    }
   }
 
   /**
@@ -91,18 +103,26 @@ export class PushNotificationService {
         } else {
           // Android: Get real FCM token
           console.log('Android: Getting FCM token...');
+          const firebaseMessaging = this.getFirebaseMessagingModule();
+
+          if (!firebaseMessaging) {
+            console.log('Firebase Messaging module unavailable on Android, falling back to mock token');
+            token = `AndroidMockToken_${Date.now()}`;
+            this.expoPushToken = token;
+            return token;
+          }
           
           // Request FCM permission
-          const authStatus = await messaging().requestPermission();
-          const enabled = authStatus === messaging.AuthorizationStatus.AUTHORIZED || 
-                         authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+          const authStatus = await firebaseMessaging().requestPermission();
+          const enabled = authStatus === firebaseMessaging.AuthorizationStatus.AUTHORIZED || 
+                         authStatus === firebaseMessaging.AuthorizationStatus.PROVISIONAL;
           
           if (!enabled) {
             console.log('FCM permission not granted, falling back to mock token');
             token = `AndroidMockToken_${Date.now()}`;
           } else {
             // Get FCM token
-            const fcmToken = await messaging().getToken();
+            const fcmToken = await firebaseMessaging().getToken();
             token = fcmToken;
             console.log('Android FCM token generated:', token);
           }
@@ -246,11 +266,17 @@ export class PushNotificationService {
 
     try {
       console.log('Testing FCM token generation...');
+      const firebaseMessaging = this.getFirebaseMessagingModule();
+
+      if (!firebaseMessaging) {
+        console.log('Firebase Messaging module unavailable');
+        return null;
+      }
       
       // Request permission for FCM
-      const authStatus = await messaging().requestPermission();
-      const enabled = authStatus === messaging.AuthorizationStatus.AUTHORIZED || 
-                     authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      const authStatus = await firebaseMessaging().requestPermission();
+      const enabled = authStatus === firebaseMessaging.AuthorizationStatus.AUTHORIZED || 
+                     authStatus === firebaseMessaging.AuthorizationStatus.PROVISIONAL;
       
       if (!enabled) {
         console.log('FCM permission not granted');
@@ -258,7 +284,7 @@ export class PushNotificationService {
       }
 
       // Get FCM token
-      const fcmToken = await messaging().getToken();
+      const fcmToken = await firebaseMessaging().getToken();
       console.log('FCM token generated successfully:', fcmToken);
       
       return fcmToken;
@@ -323,7 +349,12 @@ export class PushNotificationService {
       return this.devicePushToken;
     }
 
-    const fcmToken = await messaging().getToken();
+    const firebaseMessaging = this.getFirebaseMessagingModule();
+    if (!firebaseMessaging) {
+      return null;
+    }
+
+    const fcmToken = await firebaseMessaging().getToken();
     this.expoPushToken = fcmToken;
     this.setupFCMMessageHandling();
     return fcmToken;
@@ -365,10 +396,16 @@ export class PushNotificationService {
 
     try {
       console.log('Setting up FCM message handling...');
+      const firebaseMessaging = this.getFirebaseMessagingModule();
+      if (!firebaseMessaging) {
+        console.log('Firebase Messaging module unavailable; skipping FCM message handling setup.');
+        return;
+      }
+
       this.fcmMessageHandlingInitialized = true;
       
       // Set up foreground message listener
-      messaging().onMessage(async remoteMessage => {
+      firebaseMessaging().onMessage(async (remoteMessage: any) => {
         console.log('FCM message received in foreground:', remoteMessage);
         
         // Check if this is an Adobe message
@@ -406,7 +443,7 @@ export class PushNotificationService {
       });
 
       // Set up background message handler
-      messaging().setBackgroundMessageHandler(async remoteMessage => {
+      firebaseMessaging().setBackgroundMessageHandler(async (remoteMessage: any) => {
         console.log('FCM message handled in background:', remoteMessage);
         // Background messages are handled automatically by FCM
       });
@@ -425,9 +462,15 @@ export class PushNotificationService {
 
     try {
       console.log('Setting up FCM token refresh handling...');
+      const firebaseMessaging = this.getFirebaseMessagingModule();
+      if (!firebaseMessaging) {
+        console.log('Firebase Messaging module unavailable; skipping FCM token refresh handling.');
+        return;
+      }
+
       this.fcmTokenRefreshListenerInitialized = true;
 
-      messaging().onTokenRefresh(async refreshedToken => {
+      firebaseMessaging().onTokenRefresh(async (refreshedToken: string) => {
         console.log('FCM token refreshed:', refreshedToken);
         this.expoPushToken = refreshedToken;
 

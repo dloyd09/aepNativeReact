@@ -16,7 +16,7 @@ import {Consent} from '@adobe/react-native-aepedgeconsent';
 import {MobileCore} from '@adobe/react-native-aepcore';
 import styles from '../../styles/styles';
 import {  useRouter } from 'expo-router';
-import { ThemedView } from '../../components/ThemedView';
+import { TechnicalScreen } from '../../components/TechnicalScreen';
 import { ThemedText } from '../../components/ThemedText';
 import { useTheme } from '@react-navigation/native';
 
@@ -72,9 +72,7 @@ const ConsentView = () => {
   }
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={{marginTop: 75}}>
-        <Button onPress={router.back} title="Go to main page" />
+    <TechnicalScreen onBack={router.back}>
         <ThemedText style={styles.welcome}>Consent v{version}</ThemedText>
         <Button
           title="Set Default Consent - Yes"
@@ -91,8 +89,7 @@ const ConsentView = () => {
         <Button title="Get Consents" onPress={getConsents} />
         <View style={styles.breakLine} />
         <ThemedText style={styles.text}>{consents}</ThemedText>
-      </ScrollView>
-    </ThemedView>
+    </TechnicalScreen>
   );
 };
 

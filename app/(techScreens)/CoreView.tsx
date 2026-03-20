@@ -6,7 +6,7 @@ import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@react-navigation/native';
 import Constants from 'expo-constants';
-import { ThemedView } from '../../components/ThemedView';
+import { TechnicalScreen } from '../../components/TechnicalScreen';
 import { ThemedText } from '../../components/ThemedText';
 import styles from '../../styles/styles';
 import { getStoredAppId } from '../../src/utils/adobeConfig';
@@ -113,9 +113,7 @@ const CoreView = () => {
   }, []);
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={{ marginTop: 75, paddingBottom: 100 }}>
-        <Button onPress={() => router.back()} title="Go to main page" />
+    <TechnicalScreen onBack={() => router.back()}>
         <ThemedText style={styles.welcome}>Setup</ThemedText>
         <ThemedText style={{ marginVertical: 12, color: theme.colors.text, fontSize: 14, textAlign: 'center' }}>
           Read-only setup diagnostics for the current app and Adobe SDK state.
@@ -138,8 +136,7 @@ const CoreView = () => {
           <SetupRow label="ECID" value={status.ecid} themeText={theme.colors.text} />
           <SetupRow label="SDK Identities" value={status.sdkIdentities} themeText={theme.colors.text} />
         </View>
-      </ScrollView>
-    </ThemedView>
+    </TechnicalScreen>
   );
 };
 

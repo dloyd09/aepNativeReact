@@ -21,7 +21,7 @@ import {
   TargetRequestObject,
 } from '@adobe/react-native-aeptarget';
 import { useRouter } from 'expo-router';
-import { ThemedView } from '../../components/ThemedView';
+import { TechnicalScreen } from '../../components/TechnicalScreen';
 import { ThemedText } from '../../components/ThemedText';
 import { useTheme } from '@react-navigation/native';
 
@@ -145,9 +145,7 @@ function TargetView() {
   const router = useRouter();
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={{ marginTop: 75 }}>
-        <Button onPress={router.back} title="Go to main page" />
+    <TechnicalScreen onBack={router.back}>
         <ThemedText style={styles.welcome}>Target Test App</ThemedText>
         <Button title="extensionVersion()" onPress={targetExtensionVersion} />
         <Button
@@ -172,8 +170,7 @@ function TargetView() {
         <Button title="prefetchContent(...)" onPress={prefetchContent} />
         <Button title="displayedLocations(...)" onPress={displayedLocations} />
         <Button title="clickedLocation(...)" onPress={clickedLocation} />
-      </ScrollView>
-    </ThemedView>
+    </TechnicalScreen>
   );
 }
 

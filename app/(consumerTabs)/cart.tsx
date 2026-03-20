@@ -15,6 +15,7 @@ import { useCartSession } from '../../hooks/useCartSession';
 import { useProfileStorage } from '../../hooks/useProfileStorage';
 import { buildPageViewEvent, buildCheckoutEvent, buildProductRemovalEvent, buildProductListOpenEvent } from '../../src/utils/xdmEventBuilders';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isAdobeConfigured } from '../../src/utils/adobeConfig';
 
 export default function CartTab() {
   const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
@@ -69,6 +70,11 @@ export default function CartTab() {
 
   const [identityMap, setIdentityMap] = useState({});
   const refreshIdentityMap = useCallback(async () => {
+    if (!(await isAdobeConfigured())) {
+      setIdentityMap({});
+      return {};
+    }
+
     const result = await Identity.getIdentities();
     console.log('Raw identity result:', JSON.stringify(result, null, 2));
     if (result && (result as any).identityMap) {
@@ -206,7 +212,7 @@ export default function CartTab() {
   );
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={{ flex: 1 }} edges={['left', 'right']}>
       <ThemedView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
         <Ionicons name="cart" size={48} color="#007AFF" />
         <ThemedText style={{ fontSize: 24, marginTop: 12, marginBottom: 24 }}>Cart</ThemedText>

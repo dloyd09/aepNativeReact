@@ -15,7 +15,7 @@ import {Button, View, ScrollView} from 'react-native';
 import {Identity, MobileVisitorAuthenticationState} from '@adobe/react-native-aepcore';
 import styles from '../../styles/styles';
 import {  useRouter } from 'expo-router';
-import { ThemedView } from '../../components/ThemedView';
+import { TechnicalScreen } from '../../components/TechnicalScreen';
 import { ThemedText } from '../../components/ThemedText';
 import { useTheme } from '@react-navigation/native';
 
@@ -71,9 +71,7 @@ const IdentityView = () => {
     const theme = useTheme();
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={{marginTop: 75}}>
-        <Button onPress={router.back} title="Go to main page" />
+    <TechnicalScreen onBack={router.back}>
         <ThemedText style={styles.welcome}>Identity</ThemedText>
         <Button title="extensionVersion()" onPress={identityExtensionVersion} />
         <Button title="syncIdentifiers()" onPress={syncIdentifiers} />
@@ -89,8 +87,7 @@ const IdentityView = () => {
         <Button title="getUrlVariables()" onPress={getUrlVariables} />
         <Button title="getIdentifiers()" onPress={getIdentifiers} />
         <Button title="getExperienceCloudId()" onPress={getExperienceCloudId} />
-      </ScrollView>
-    </ThemedView>
+    </TechnicalScreen>
   );
 };
 

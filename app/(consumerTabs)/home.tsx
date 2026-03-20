@@ -3,7 +3,7 @@ import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
 import { View, FlatList, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useTheme, useNavigationState } from '@react-navigation/native';
+import { useFocusEffect, useTheme } from '@react-navigation/native';
 import { Edge } from '@adobe/react-native-aepedge';
 import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { useRouter } from 'expo-router';
@@ -11,6 +11,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import productsData from '../productData/bootcamp_products.json';
 import { buildPageViewEvent } from '../../src/utils/xdmEventBuilders';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isAdobeConfigured } from '../../src/utils/adobeConfig';
 
 // Extract unique categories from the JSON data
 const CATEGORIES: { key: string; label: string; description: string }[] = Array.from(new Set(productsData.map(product => product.product.categories.primary))).map(category => ({
@@ -39,11 +40,14 @@ const CATEGORY_ICONS: { [key: string]: string } = {
 export default function HomeTab() {
   const router = useRouter();
   const { colors } = useTheme();
-  const navigationState = useNavigationState(state => state);
-  const previousRouteName = navigationState.routes[navigationState.index - 1]?.name || 'Unknown';
   
   const [identityMap, setIdentityMap] = useState({});
   const refreshIdentityMap = useCallback(async () => {
+    if (!(await isAdobeConfigured())) {
+      setIdentityMap({});
+      return {};
+    }
+
     const result = await Identity.getIdentities();
     if (result && (result as any).identityMap) {
       setIdentityMap((result as any).identityMap);
@@ -130,7 +134,7 @@ export default function HomeTab() {
   );
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={{ flex: 1 }} edges={['left', 'right']}>
       <ThemedView style={{ flex: 1 }}>
         <ThemedText style={styles.header}>WeRetail</ThemedText>
         <FlatList

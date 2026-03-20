@@ -5,6 +5,7 @@
   },
   "build": {
     "development": {
+      "node": "20.19.4",
       "developmentClient": true,
       "distribution": "internal",
       "android": {
@@ -13,14 +14,32 @@
       "ios": {
         "simulator": true,
         "buildConfiguration": "Debug",
-        "image": "macos-sequoia-15.3-xcode-16.2"
+        "image": "macos-sequoia-15.6-xcode-26.2"
       },
       "env": {
+        "EXPO_PUBLIC_ENABLE_ADOBE_STARTUP": "1",
+        "EXPO_PUBLIC_ENABLE_PUSH_STARTUP": "1",
+        "RCT_NEW_ARCH_ENABLED": "0",
+        "EXPO_NEW_ARCH_ENABLED": "0"
+      }
+    },
+    "development-device": {
+      "node": "20.19.4",
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "buildConfiguration": "Debug",
+        "image": "macos-sequoia-15.6-xcode-26.2"
+      },
+      "env": {
+        "EXPO_PUBLIC_ENABLE_ADOBE_STARTUP": "1",
+        "EXPO_PUBLIC_ENABLE_PUSH_STARTUP": "1",
         "RCT_NEW_ARCH_ENABLED": "0",
         "EXPO_NEW_ARCH_ENABLED": "0"
       }
     },
     "preview": {
+      "node": "20.19.4",
       "distribution": "store",
       "android": {
         "buildType": "apk"
@@ -28,15 +47,18 @@
       "ios": {
         "buildConfiguration": "Release",
         "resourceClass": "m-medium",
-        "image": "macos-sequoia-15.3-xcode-16.2"
+        "image": "macos-sequoia-15.6-xcode-26.2"
       },
       "env": {
+        "EXPO_PUBLIC_ENABLE_ADOBE_STARTUP": "1",
+        "EXPO_PUBLIC_ENABLE_PUSH_STARTUP": "1",
         "RCT_NEW_ARCH_ENABLED": "0",
         "EXPO_NEW_ARCH_ENABLED": "0",
         "RCT_FABRIC_ENABLED": "0"
       }
     },
     "production": {
+      "node": "20.19.4",
       "autoIncrement": true,
       "android": {
         "buildType": "apk"
@@ -45,9 +67,31 @@
         "distribution": "store",
         "buildConfiguration": "Release",
         "resourceClass": "m-medium",
-        "image": "macos-sequoia-15.3-xcode-16.2"
+        "image": "macos-sequoia-15.6-xcode-26.2"
       },
       "env": {
+        "EXPO_PUBLIC_ENABLE_ADOBE_STARTUP": "1",
+        "EXPO_PUBLIC_ENABLE_PUSH_STARTUP": "1",
+        "RCT_NEW_ARCH_ENABLED": "0",
+        "EXPO_NEW_ARCH_ENABLED": "0",
+        "RCT_FABRIC_ENABLED": "0"
+      }
+    },
+    "diagnostic": {
+      "node": "20.19.4",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "distribution": "store",
+        "buildConfiguration": "Release",
+        "resourceClass": "m-medium",
+        "image": "macos-sequoia-15.6-xcode-26.2"
+      },
+      "env": {
+        "EXPO_PUBLIC_ENABLE_ADOBE_STARTUP": "0",
+        "EXPO_PUBLIC_ENABLE_PUSH_STARTUP": "0",
         "RCT_NEW_ARCH_ENABLED": "0",
         "EXPO_NEW_ARCH_ENABLED": "0",
         "RCT_FABRIC_ENABLED": "0"

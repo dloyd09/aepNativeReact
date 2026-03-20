@@ -32,8 +32,12 @@ export const configureWithAppId = async (appId: string) => {
   try {
     console.log('Configuring native module with App ID:', appId);
     await AsyncStorage.setItem(APP_ID_STORAGE_KEY, appId);
-    await AppIdModule.configureWithAppId(appId);
-    console.log('Native module configuration successful');
+    if (AppIdModule && typeof AppIdModule.configureWithAppId === 'function') {
+      await AppIdModule.configureWithAppId(appId);
+      console.log('Native module configuration successful');
+    } else {
+      console.log('AppIdModule not available on this platform; skipping native config call');
+    }
   } catch (error) {
     console.error('Error configuring Adobe App ID:', error);
     throw error;
@@ -49,6 +53,11 @@ export const getStoredAppId = async (): Promise<string | null> => {
     console.error('Error getting stored App ID:', error);
     return null;
   }
+};
+
+export const isAdobeConfigured = async (): Promise<boolean> => {
+  const appId = await getStoredAppId();
+  return Boolean(appId && appId.trim());
 };
 
 export const initializeAdobe = async () => {

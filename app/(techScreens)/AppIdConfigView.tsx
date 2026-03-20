@@ -8,7 +8,7 @@ import { Target } from '@adobe/react-native-aeptarget';
 import { UserProfile } from '@adobe/react-native-aepuserprofile';
 import styles from '../../styles/styles';
 import { useRouter } from 'expo-router';
-import { ThemedView } from '../../components/ThemedView';
+import { TechnicalScreen } from '../../components/TechnicalScreen';
 import { ThemedText } from '../../components/ThemedText';
 import { useTheme } from '@react-navigation/native';
 import { configureAdobe } from '../../src/utils/adobeConfig';
@@ -185,9 +185,7 @@ const AppIdConfigView = () => {
   };
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={{ marginTop: 75, paddingBottom: 100 }}>
-        <Button onPress={() => router.back()} title="Go to main page" />
+    <TechnicalScreen onBack={() => router.back()}>
         <ThemedText style={styles.welcome}>Adobe App ID Configuration</ThemedText>
         <ThemedText style={styles.text}>Enter your Adobe Launch App ID:</ThemedText>
         <ThemedText style={[styles.text, { marginHorizontal: 16, textAlign: 'center', fontSize: 13 }]}>
@@ -216,8 +214,7 @@ const AppIdConfigView = () => {
         <ThemedText style={[styles.text, { marginHorizontal: 16, textAlign: 'center', fontSize: 12, opacity: 0.8 }]}>
           This reset is broader than just removing the App ID. It also clears local Adobe-related caches and resets identities for a clean restart.
         </ThemedText>
-      </ScrollView>
-    </ThemedView>
+    </TechnicalScreen>
   );
 };
 

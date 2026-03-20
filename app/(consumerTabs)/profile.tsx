@@ -14,6 +14,7 @@ import { UserProfile } from '@adobe/react-native-aepuserprofile';
 import { useProfileStorage } from '../../hooks/useProfileStorage';
 import { buildPageViewEvent, buildLoginEvent, buildLogoutEvent } from '../../src/utils/xdmEventBuilders';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isAdobeConfigured } from '../../src/utils/adobeConfig';
 
 export default function ProfileTab() {
   const [loggedIn, setLoggedIn] = useState(false);
@@ -31,6 +32,12 @@ export default function ProfileTab() {
 
   const refreshIdentityState = useCallback(async () => {
     try {
+      if (!(await isAdobeConfigured())) {
+        setIdentityMap({});
+        setEcid('');
+        return {};
+      }
+
       const result = await Identity.getIdentities();
       console.log('Profile - Raw identity result:', JSON.stringify(result, null, 2));
 
@@ -239,7 +246,7 @@ export default function ProfileTab() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={{ flex: 1 }} edges={['left', 'right']}>
       <ScrollableContainer contentContainerStyle={{ justifyContent: 'center', alignItems: 'center', flexGrow: 1 }}>
       <Ionicons name="person" size={48} color={colors.primary} />
       <ThemedText type="title" style={{ marginTop: 12 }}>Profile</ThemedText>

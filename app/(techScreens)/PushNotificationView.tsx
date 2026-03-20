@@ -14,7 +14,7 @@ import React, { useState, useEffect } from 'react';
 import { Button, ScrollView, Alert, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
-import { ThemedView } from '../../components/ThemedView';
+import { TechnicalScreen } from '../../components/TechnicalScreen';
 import { ThemedText } from '../../components/ThemedText';
 import { useTheme } from '@react-navigation/native';
 import { pushNotificationService } from '../../src/utils/pushNotifications';
@@ -136,9 +136,7 @@ function PushNotificationView() {
 
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={{marginTop: 75}}>
-        <Button onPress={router.back} title="Go to main page" />
+    <TechnicalScreen onBack={router.back}>
         <ThemedText style={styles.welcome}>Push Notifications</ThemedText>
         <ThemedText style={{ marginTop: 8, color: theme.colors.text, fontSize: 13, textAlign: 'center' }}>
           Push token registration now auto-syncs to Adobe after permission grant and app startup.
@@ -192,8 +190,7 @@ function PushNotificationView() {
             {log}
           </ThemedText>
         ) : null}
-      </ScrollView>
-    </ThemedView>
+    </TechnicalScreen>
   );
 }
 

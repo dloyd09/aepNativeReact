@@ -15,7 +15,7 @@ import {Button, Text, View, ScrollView} from 'react-native';
 import {UserProfile} from '@adobe/react-native-aepuserprofile';
 import styles from '../../styles/styles';
 import { useRouter } from 'expo-router';
-import { ThemedView } from '../../components/ThemedView';
+import { TechnicalScreen } from '../../components/TechnicalScreen';
 import { ThemedText } from '../../components/ThemedText';
 import { useTheme } from '@react-navigation/native';
 
@@ -48,16 +48,13 @@ const ProfileView = () => {
   const theme = useTheme();
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={{marginTop: 75}}>
-        <Button onPress={() => router.back()} title="Go to main page" />
+    <TechnicalScreen onBack={() => router.back()}>
         <ThemedText type="title" style={styles.welcome}>UserProfile</ThemedText>
         <Button title="extensionVersion()" onPress={profileExtensionVersion} />
         <Button title="updateUserAttributes()" onPress={updateUserAttributes} />
         <Button title="removeUserAttributes()" onPress={removeUserAttributes} />
         <Button title="getUserAttributes()" onPress={getUserAttributes} />
-      </ScrollView>
-    </ThemedView>
+    </TechnicalScreen>
   );
 };
 

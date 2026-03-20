@@ -22,7 +22,7 @@ import {
 import {NavigationProps} from '../../types/props';
 import styles from '../../styles/styles';
 import { useRouter } from 'expo-router';
-import { ThemedView } from '../../components/ThemedView';
+import { TechnicalScreen } from '../../components/TechnicalScreen';
 import { ThemedText } from '../../components/ThemedText';
 import { useTheme } from '@react-navigation/native';
 
@@ -98,9 +98,7 @@ const PlacesView = () => {
     const theme = useTheme();
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={{marginTop: 75}}>
-        <Button onPress={router.back} title="Go to main page" />
+    <TechnicalScreen onBack={router.back}>
         <ThemedText style={styles.welcome}>Places</ThemedText>
         <Button title="extensionVersion()" onPress={extensionVersion} />
         <Button
@@ -118,8 +116,7 @@ const PlacesView = () => {
           onPress={setAuthorizationStatus}
         />
         <Button title="clear" onPress={clear} />
-      </ScrollView>
-    </ThemedView>
+    </TechnicalScreen>
   );
 };
 
