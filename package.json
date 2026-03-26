@@ -1,6 +1,6 @@
 {
   "name": "WeRetail",
-  "main": "./index.js",
+  "main": "expo-router/entry",
   "version": "1.0.8",
   "scripts": {
     "start": "expo start",

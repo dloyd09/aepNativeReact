@@ -7,10 +7,9 @@ import { useEffect } from 'react';
 import { MobileCore, LogLevel } from '@adobe/react-native-aepcore';
 import { CartProvider } from '../components/CartContext';
 import { StartupErrorBoundary } from '../components/StartupErrorBoundary';
-import { Alert, Image } from 'react-native';
+import { Image } from 'react-native';
 import { configureAdobe, getStoredAppId } from '../src/utils/adobeConfig';
 import { pushNotificationService } from '../src/utils/pushNotifications';
-import { persistRuntimeError } from '../src/utils/runtimeDiagnostics';
 import * as Linking from 'expo-linking';
 import Constants from 'expo-constants';
 
@@ -21,23 +20,6 @@ try {
 } catch {
   // Optional in builds without expo-dev-client installed.
 }
-
-// DIAGNOSTIC: install global error handler at module level (before React renders)
-// so we can catch errors that happen before useEffect runs.
-(function installEarlyErrorHandler() {
-  const errorUtils = (global as any).ErrorUtils;
-  if (errorUtils && typeof errorUtils.setGlobalHandler === 'function') {
-    errorUtils.setGlobalHandler((error: Error, isFatal?: boolean) => {
-      const msg = error?.message || 'Unknown error';
-      const stack = error?.stack?.split('\n').slice(0, 6).join('\n') || '';
-      Alert.alert(
-        isFatal ? '[FATAL] Startup Crash' : '[ERROR] Startup Error',
-        `${msg}\n\n${stack}`,
-        [{ text: 'OK' }]
-      );
-    });
-  }
-})();
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -65,37 +47,6 @@ export default function RootLayout() {
       enablePushStartup: STARTUP_ENABLE_PUSH,
       executionEnvironment: Constants.executionEnvironment,
     });
-
-    const errorUtils = (global as any).ErrorUtils;
-    const previousGlobalHandler =
-      errorUtils && typeof errorUtils.getGlobalHandler === 'function'
-        ? errorUtils.getGlobalHandler()
-        : undefined;
-
-    if (errorUtils && typeof errorUtils.setGlobalHandler === 'function') {
-      logStartup('Installing global error handler');
-      errorUtils.setGlobalHandler((error: Error, isFatal?: boolean) => {
-        const msg = error?.message || 'Unknown uncaught error';
-        logStartup('Global error handler invoked', { message: msg, isFatal });
-
-        persistRuntimeError({
-          source: 'global-handler',
-          message: msg,
-          stack: error?.stack,
-          isFatal,
-          timestamp: new Date().toISOString(),
-        }).catch(() => undefined);
-
-        // DIAGNOSTIC: show alert instead of crashing so we can see the error
-        Alert.alert(
-          isFatal ? 'Fatal JS Error' : 'JS Error',
-          `${msg}\n\n${error?.stack?.split('\n').slice(0, 5).join('\n') || ''}`,
-          [{ text: 'OK' }]
-        );
-
-        // NOTE: not calling previousGlobalHandler intentionally to prevent crash during diagnostics
-      });
-    }
 
     logStartup('App version snapshot', {
       version: Constants.expoConfig?.version,
@@ -212,12 +163,7 @@ export default function RootLayout() {
     const listener = setupPushHandling();
 
     return () => {
-      logStartup('RootLayout cleanup running');
       listener?.remove();
-
-      if (errorUtils && typeof errorUtils.setGlobalHandler === 'function' && typeof previousGlobalHandler === 'function') {
-        errorUtils.setGlobalHandler(previousGlobalHandler);
-      }
     };
   }, []);
 
