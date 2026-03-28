@@ -1,0 +1,3 @@
+[submodule ".cursor/skills/agent-skills"]
+	path = .cursor/skills/agent-skills
+	url = https://github.com/callstackincubator/agent-skills.git

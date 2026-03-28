@@ -36,6 +36,4 @@ rootProject.name = 'WeRetail'
 expoAutolinking.useExpoVersionCatalog()
 
 include ':app'
-include ':react-native-reanimated'
-project(':react-native-reanimated').projectDir = new File(rootDir, '../.rnr/android')
 includeBuild(expoAutolinking.reactNativeGradlePlugin)

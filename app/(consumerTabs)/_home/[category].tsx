@@ -1,6 +1,7 @@
 import productsData from '../../productData/bootcamp_products.json';
 import { Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useState, useEffect } from 'react';
 import { ThemedView } from '../../../components/ThemedView';
 import { ThemedText } from '../../../components/ThemedText';
@@ -10,7 +11,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Edge } from '@adobe/react-native-aepedge';
 import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { buildPageViewEvent } from '../../../src/utils/xdmEventBuilders';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useProfileStorage } from '../../../hooks/useProfileStorage';
 
 const PRODUCT_ICONS: { [key: string]: any } = {
   // Family
@@ -129,21 +130,22 @@ export default function CategoryProductList() {
   const router = useRouter();
   const { colors } = useTheme();
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
 
+  const { profile, isProfileLoading } = useProfileStorage();
   const [identityMap, setIdentityMap] = useState({});
   const refreshIdentityMap = useCallback(async () => {
-    console.log('Category - Fetching identities...');
-    const result = await Identity.getIdentities();
-    console.log('Category - Identity result:', JSON.stringify(result, null, 2));
-    if (result && (result as any).identityMap) {
-      console.log('Category - Setting identityMap from result.identityMap');
-      setIdentityMap((result as any).identityMap);
-      return (result as any).identityMap;
+    try {
+      const result = await Identity.getIdentities();
+      if (result && (result as any).identityMap) {
+        setIdentityMap((result as any).identityMap);
+        return (result as any).identityMap;
+      }
+      setIdentityMap(result);
+      return result;
+    } catch {
+      return {};
     }
-
-    console.log('Category - Setting identityMap from result directly');
-    setIdentityMap(result);
-    return result;
   }, []);
 
   // Filter products by category
@@ -160,23 +162,17 @@ export default function CategoryProductList() {
   useFocusEffect(
     useCallback(() => {
       const handleFocus = async () => {
+        if (isProfileLoading) {
+          console.log('Category - Profile not yet loaded from storage, skipping page view');
+          return;
+        }
+
         const currentIdentityMap = await refreshIdentityMap();
 
         // Check if identityMap is ready
         if (!currentIdentityMap || Object.keys(currentIdentityMap).length === 0) {
           console.log('Category - IdentityMap not ready, skipping page view');
           return;
-        }
-
-        // Get fresh profile from AsyncStorage
-        let currentProfile = { firstName: '', email: '' };
-        try {
-          const storedProfile = await AsyncStorage.getItem('userProfile');
-          if (storedProfile) {
-            currentProfile = JSON.parse(storedProfile);
-          }
-        } catch (error) {
-          console.error('Failed to read profile:', error);
         }
 
         const pageName = category ? category.charAt(0).toUpperCase() + category.slice(1) + ' Products' : 'Products';
@@ -186,7 +182,7 @@ export default function CategoryProductList() {
         try {
           const pageViewEvent = await buildPageViewEvent({
             identityMap: currentIdentityMap,
-            profile: currentProfile,
+            profile,
             pageTitle: pageName,
             pagePath: `/home/${category}`,
             pageType: 'category',
@@ -203,8 +199,8 @@ export default function CategoryProductList() {
         }
       };
 
-      handleFocus();
-    }, [category, products.length, refreshIdentityMap])
+      handleFocus().catch((err) => console.error('Category - Focus handler error:', err));
+    }, [category, products.length, refreshIdentityMap, isProfileLoading, profile])
   );
 
   const handleProductPress = (productName: string) => {
@@ -230,8 +226,8 @@ export default function CategoryProductList() {
   };
 
   return (
-    <ThemedView style={{ flex: 1 }}>
-      <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 10 }}>
+    <ThemedView style={{ flex: 1, paddingTop: insets.top }}>
+      <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 16 }}>
         <ThemedText style={{ color: colors.primary }}>Back</ThemedText>
       </TouchableOpacity>
       <ThemedText style={styles.header}>{category ? `${category.charAt(0).toUpperCase() + category.slice(1)} Products` : 'Products'}</ThemedText>

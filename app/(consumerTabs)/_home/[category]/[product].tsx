@@ -25,6 +25,7 @@ export const options = {
 };
 
 import React, { useState, useCallback, useEffect } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedView } from '../../../../components/ThemedView';
 import { ThemedText } from '../../../../components/ThemedText';
 import { ScrollableContainer } from '../../../../components/ScrollableContainer';
@@ -36,26 +37,31 @@ import { useTheme, useNavigation, useFocusEffect } from '@react-navigation/nativ
 import { useCart } from '../../../../components/CartContext';
 import { useCartSession } from '../../../../hooks/useCartSession';
 import { buildProductViewEvent, buildProductListAddEvent, buildPageViewEvent } from '../../../../src/utils/xdmEventBuilders';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useProfileStorage } from '../../../../hooks/useProfileStorage';
 
 export default function ProductDetail() {
   const { category, product } = useLocalSearchParams<{ category: string; product: string }>();
   const router = useRouter();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { addToCart, isInCart } = useCart();
   const navigation = useNavigation();
   const { cartSessionId, isLoading: isCartSessionLoading } = useCartSession();
 
+  const { profile, isProfileLoading } = useProfileStorage();
   const [identityMap, setIdentityMap] = useState({});
   const refreshIdentityMap = useCallback(async () => {
-    const result = await Identity.getIdentities();
-    if (result && (result as any).identityMap) {
-      setIdentityMap((result as any).identityMap);
-      return (result as any).identityMap;
+    try {
+      const result = await Identity.getIdentities();
+      if (result && (result as any).identityMap) {
+        setIdentityMap((result as any).identityMap);
+        return (result as any).identityMap;
+      }
+      setIdentityMap(result);
+      return result;
+    } catch {
+      return {};
     }
-
-    setIdentityMap(result);
-    return result;
   }, []);
 
   // Find the product in the JSON data
@@ -77,6 +83,12 @@ export default function ProductDetail() {
     useCallback(() => {
       const handleFocus = async () => {
         if (!productData) return;
+
+        if (isProfileLoading) {
+          console.log('Product Detail - Profile not yet loaded from storage, skipping product view');
+          return;
+        }
+
         const currentIdentityMap = await refreshIdentityMap();
 
         // Check if identityMap is ready
@@ -85,22 +97,11 @@ export default function ProductDetail() {
           return;
         }
 
-        // Get fresh profile from AsyncStorage
-        let currentProfile = { firstName: '', email: '' };
-        try {
-          const storedProfile = await AsyncStorage.getItem('userProfile');
-          if (storedProfile) {
-            currentProfile = JSON.parse(storedProfile);
-          }
-        } catch (error) {
-          console.error('Failed to read profile:', error);
-        }
-
         // Send page view event with siteSection hierarchy
         try {
           const pageViewEvent = await buildPageViewEvent({
             identityMap: currentIdentityMap,
-            profile: currentProfile,
+            profile,
             pageTitle: productData.product.name,
             pagePath: `/home/${category}/${product}`,
             pageType: 'product',
@@ -125,7 +126,7 @@ export default function ProductDetail() {
         try {
           const productViewEvent = await buildProductViewEvent({
             identityMap: currentIdentityMap,
-            profile: currentProfile,
+            profile,
             product: {
               sku: productSku || '',
               name: productData.product.name,
@@ -148,8 +149,8 @@ export default function ProductDetail() {
         }
       };
 
-      handleFocus();
-    }, [productData, category, productSku, refreshIdentityMap])
+      handleFocus().catch((err) => console.error('Product Detail - Focus handler error:', err));
+    }, [productData, category, productSku, refreshIdentityMap, isProfileLoading, profile])
   );
 
   //console.log({ category, product, productData });
@@ -158,7 +159,7 @@ export default function ProductDetail() {
     return (
       <ThemedView style={styles.container}>
         <ThemedText>Product not found.</ThemedText>
-        <TouchableOpacity onPress={() => router.back()} style={{ padding: 10 }}>
+        <TouchableOpacity onPress={() => router.back()} style={{ padding: 16 }}>
           <ThemedText style={{ color: colors.primary }}>Back</ThemedText>
         </TouchableOpacity>
       </ThemedView>
@@ -193,22 +194,11 @@ export default function ProductDetail() {
       return;
     }
 
-    // Get fresh profile from AsyncStorage
-    let currentProfile = { firstName: '', email: '' };
-    try {
-      const storedProfile = await AsyncStorage.getItem('userProfile');
-      if (storedProfile) {
-        currentProfile = JSON.parse(storedProfile);
-      }
-    } catch (error) {
-      console.error('Failed to read profile:', error);
-    }
-
     // Send product list add event
     try {
       const productListAddEvent = await buildProductListAddEvent({
         identityMap: currentIdentityMap,
-        profile: currentProfile,
+        profile,
         product: {
           sku: productSku || '',
           name: productData.product.name,
@@ -236,7 +226,7 @@ export default function ProductDetail() {
   const added = isInCart(productData.product.name, category ?? '');
 
   return (
-    <ScrollableContainer contentContainerStyle={{ paddingTop: 48, alignItems: 'center' }}>
+    <ScrollableContainer contentContainerStyle={{ paddingTop: insets.top + 8, alignItems: 'center' }}>
       <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 10, alignSelf: 'flex-start', marginBottom: 16 }}>
         <ThemedText style={{ color: colors.primary }}>Back</ThemedText>
       </TouchableOpacity>

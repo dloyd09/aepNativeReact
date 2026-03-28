@@ -14,7 +14,6 @@ import { RootStackParamList } from './_layout';
 import { useCartSession } from '../../hooks/useCartSession';
 import { useProfileStorage } from '../../hooks/useProfileStorage';
 import { buildPageViewEvent, buildCheckoutEvent, buildProductRemovalEvent, buildProductListOpenEvent } from '../../src/utils/xdmEventBuilders';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isAdobeConfigured } from '../../src/utils/adobeConfig';
 
 export default function CartTab() {
@@ -59,7 +58,7 @@ export default function CartTab() {
 
   const { cart, incrementQuantity, decrementQuantity, removeFromCart, addToCart } = useCart();
   const { cartSessionId, isLoading: isCartSessionLoading, productListOpenPending, clearProductListOpenPending } = useCartSession();
-  const { profile, setProfile: saveProfile } = useProfileStorage();
+  const { profile, setProfile: saveProfile, isProfileLoading } = useProfileStorage();
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   // Memoize modifiedCart to prevent infinite re-renders in useFocusEffect
@@ -98,14 +97,9 @@ export default function CartTab() {
       if (!productListOpenPending || !identityMap || Object.keys(identityMap).length === 0) return;
       const send = async () => {
         try {
-          let currentProfile = { firstName: '', email: '' };
-          try {
-            const stored = await AsyncStorage.getItem('userProfile');
-            if (stored) currentProfile = JSON.parse(stored);
-          } catch (_) {}
           const event = await buildProductListOpenEvent({
             identityMap,
-            profile: currentProfile,
+            profile,
             cartSessionId: productListOpenPending,
           });
           await Edge.sendEvent(event);
@@ -120,22 +114,11 @@ export default function CartTab() {
 
   // Handle remove from cart with tracking
   const handleRemoveFromCart = async (item: any) => {
-    // Get fresh profile from AsyncStorage
-    let currentProfile = { firstName: '', email: '' };
-    try {
-      const storedProfile = await AsyncStorage.getItem('userProfile');
-      if (storedProfile) {
-        currentProfile = JSON.parse(storedProfile);
-      }
-    } catch (error) {
-      console.error('Failed to read profile:', error);
-    }
-
     // Send product removal event
     try {
       const removalEvent = await buildProductRemovalEvent({
         identityMap,
-        profile: currentProfile,
+        profile,
         cartSessionId: cartSessionId || 'unknown',
         productListItems: [item] // Only the item being removed
       });
@@ -168,23 +151,18 @@ export default function CartTab() {
           return;
         }
 
-        // Get fresh profile from AsyncStorage (don't update state to avoid re-render loop)
-        let currentProfile = { firstName: '', email: '' };
-        try {
-          const storedProfile = await AsyncStorage.getItem('userProfile');
-          if (storedProfile) {
-            currentProfile = JSON.parse(storedProfile);
-            console.log('📖 Read profile from storage:', currentProfile);
-          }
-        } catch (error) {
-          console.error('Failed to read profile:', error);
+        // Wait for the profile AsyncStorage read to complete before sending — avoids
+        // empty-identity XDM events on cold start while the hook is still loading.
+        if (isProfileLoading) {
+          console.log('Cart - Profile not yet loaded from storage, skipping page view');
+          return;
         }
 
         // Send page view
         try {
           const pageViewEvent = await buildPageViewEvent({
             identityMap: currentIdentityMap,
-            profile: currentProfile,
+            profile,
             pageTitle: 'Shopping Cart',
             pagePath: '/cart',
             pageType: 'cart',
@@ -200,7 +178,7 @@ export default function CartTab() {
             itemCount: modifiedCart.length,
             totalValue: modifiedCart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2),
             cartSessionId,
-            participantName: currentProfile?.firstName || 'Guest User'
+            participantName: profile?.firstName || 'Guest User'
           });
         } catch (error) {
           console.error('❌ Error sending cart page view:', error);
@@ -208,12 +186,12 @@ export default function CartTab() {
       };
 
       handleFocus();
-    }, [modifiedCart, cartSessionId, isCartSessionLoading, refreshIdentityMap])
+    }, [modifiedCart, cartSessionId, isCartSessionLoading, refreshIdentityMap, isProfileLoading])
   );
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['left', 'right']}>
-      <ThemedView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+      <ThemedView style={{ flex: 1, alignItems: 'center', padding: 24 }}>
         <Ionicons name="cart" size={48} color="#007AFF" />
         <ThemedText style={{ fontSize: 24, marginTop: 12, marginBottom: 24 }}>Cart</ThemedText>
       {cart.length === 0 ? (
@@ -221,6 +199,7 @@ export default function CartTab() {
       ) : (
         <>
           <FlatList
+            style={{ flex: 1, width: '100%' }}
             data={modifiedCart}
             keyExtractor={item => `${item.category}-${item.name}`}
             renderItem={({ item }) => (
@@ -265,36 +244,23 @@ export default function CartTab() {
             onPress={async () => {
               if (isCheckingOut) return; // Prevent double-clicks
               setIsCheckingOut(true); // Show loading state
-              let currentProfile = { firstName: '', email: '' };
-              
+
               try {
                 if (!cartSessionId) {
                   console.warn('Cart session not ready for checkout');
-                  setIsCheckingOut(false); // Reset flag before early return
-                  navigation.navigate('Checkout');
+                  setIsCheckingOut(false);
                   return;
                 }
 
                 if (!identityMap || Object.keys(identityMap).length === 0) {
                   console.warn('IdentityMap not ready for checkout');
-                  setIsCheckingOut(false); // Reset flag before early return
-                  navigation.navigate('Checkout');
+                  setIsCheckingOut(false);
                   return;
-                }
-
-                // Get fresh profile from AsyncStorage before sending event
-                try {
-                  const storedProfile = await AsyncStorage.getItem('userProfile');
-                  if (storedProfile) {
-                    currentProfile = JSON.parse(storedProfile);
-                  }
-                } catch (error) {
-                  console.error('Failed to read profile for checkout:', error);
                 }
 
                 const checkoutEvent = await buildCheckoutEvent({
                   identityMap,
-                  profile: currentProfile,
+                  profile,
                   cartSessionId,
                   productListItems: modifiedCart
                 });
@@ -307,15 +273,16 @@ export default function CartTab() {
                   totalValue: modifiedCart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2),
                   cartSessionId,
                   hasECID: !!(identityMap as any)?.ECID?.[0]?.id,
-                  participantName: currentProfile?.firstName || 'Guest User'
+                  participantName: profile?.firstName || 'Guest User'
                 });
 
+                // Navigate only on success — students should see the checkout event
+                // in Assurance before proceeding. Never navigate on failure.
                 navigation.navigate('Checkout');
               } catch (error) {
                 console.error('❌ Error sending checkout event:', error);
-                console.error('Event that failed:', JSON.stringify({identityMap, currentProfile, cartSessionId}));
-                // Still navigate even if tracking fails
-                navigation.navigate('Checkout');
+                console.error('Event that failed:', JSON.stringify({identityMap, profile, cartSessionId}));
+                // Do not navigate — keep student on cart so they can retry.
               } finally {
                 setIsCheckingOut(false); // Reset loading state
               }

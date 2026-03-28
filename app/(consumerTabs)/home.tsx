@@ -10,7 +10,7 @@ import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import productsData from '../productData/bootcamp_products.json';
 import { buildPageViewEvent } from '../../src/utils/xdmEventBuilders';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useProfileStorage } from '../../hooks/useProfileStorage';
 import { isAdobeConfigured } from '../../src/utils/adobeConfig';
 
 // Extract unique categories from the JSON data
@@ -41,6 +41,7 @@ export default function HomeTab() {
   const router = useRouter();
   const { colors } = useTheme();
   
+  const { profile, isProfileLoading } = useProfileStorage();
   const [identityMap, setIdentityMap] = useState({});
   const refreshIdentityMap = useCallback(async () => {
     if (!(await isAdobeConfigured())) {
@@ -77,22 +78,18 @@ export default function HomeTab() {
           return;
         }
 
-        // Get fresh profile from AsyncStorage
-        let currentProfile = { firstName: '', email: '' };
-        try {
-          const storedProfile = await AsyncStorage.getItem('userProfile');
-          if (storedProfile) {
-            currentProfile = JSON.parse(storedProfile);
-          }
-        } catch (error) {
-          console.error('Failed to read profile:', error);
+        // Wait for the profile AsyncStorage read to complete before sending — avoids
+        // empty-identity XDM events on cold start while the hook is still loading.
+        if (isProfileLoading) {
+          console.log('Home - Profile not yet loaded from storage, skipping page view');
+          return;
         }
 
         // Send page view
         try {
           const pageViewEvent = await buildPageViewEvent({
             identityMap: currentIdentityMap,
-            profile: currentProfile,
+            profile,
             pageTitle: 'Home',
             pagePath: '/home',
             pageType: 'home',
@@ -109,7 +106,7 @@ export default function HomeTab() {
       };
 
       handleFocus();
-    }, [refreshIdentityMap])
+    }, [refreshIdentityMap, isProfileLoading])
   );
 
   const handleCategoryPress = (categoryKey: string) => {
@@ -134,7 +131,7 @@ export default function HomeTab() {
   );
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['left', 'right']}>
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
       <ThemedView style={{ flex: 1 }}>
         <ThemedText style={styles.header}>WeRetail</ThemedText>
         <FlatList

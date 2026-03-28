@@ -7,8 +7,10 @@ import { useEffect } from 'react';
 import { MobileCore, LogLevel } from '@adobe/react-native-aepcore';
 import { CartProvider } from '../components/CartContext';
 import { StartupErrorBoundary } from '../components/StartupErrorBoundary';
-import { Image } from 'react-native';
+import { Image, InteractionManager, Platform } from 'react-native';
+import { Edge } from '@adobe/react-native-aepedge';
 import { configureAdobe, getStoredAppId } from '../src/utils/adobeConfig';
+import { setAdobeReadiness } from '../src/utils/adobeReadiness';
 import { pushNotificationService } from '../src/utils/pushNotifications';
 import * as Linking from 'expo-linking';
 import Constants from 'expo-constants';
@@ -65,6 +67,7 @@ export default function RootLayout() {
 
         if (!appId) {
           logStartup('No App ID found, Adobe SDK not initialized');
+          setAdobeReadiness('idle');
           return;
         }
 
@@ -105,9 +108,36 @@ export default function RootLayout() {
       });
 
     const setupPushHandling = () => {
+      // item 4.3: log foreground push receipt with payload shape
+      const receivedListener = pushNotificationService.addNotificationReceivedListener((notification) => {
+        const data = notification.request.content.data;
+        logStartup('[4.3] Push received in foreground', {
+          title: notification.request.content.title,
+          body: notification.request.content.body,
+          dataKeys: data ? Object.keys(data) : [],
+          hasDeepLink: Boolean(data?.adb_uri || data?.adb_deeplink || data?.uri),
+          hasAdobeMessageId: Boolean(data?.adobe_message_id || data?.adb_n_id),
+        });
+      });
+
       logStartup('Installing push notification response listener');
-      return pushNotificationService.addNotificationResponseReceivedListener((response) => {
-        logStartup('Push notification tapped');
+      const responseListener = pushNotificationService.addNotificationResponseReceivedListener(async (response) => {
+        // item 4.4: log push interaction type (open, dismiss, or action button)
+        const { actionIdentifier } = response;
+        const isDismiss = actionIdentifier === 'expo.modules.notifications.actions.DISMISS';
+        const isOpen = actionIdentifier === 'expo.modules.notifications.actions.DEFAULT';
+        const interactionType = isDismiss ? 'dismissed' : isOpen ? 'opened' : `action:${actionIdentifier}`;
+        logStartup(`[4.4] Push interaction — ${interactionType}`, {
+          actionIdentifier,
+          notificationId: response.notification.request.identifier,
+        });
+
+        if (isDismiss) {
+          // No deep link navigation or tracking for dismiss — log and exit
+          logStartup('[4.4] Push dismissed — no tracking event sent');
+          return;
+        }
+
         console.log('Full notification object:', JSON.stringify(response, null, 2));
 
         const data = response.notification.request.content.data;
@@ -115,6 +145,28 @@ export default function RootLayout() {
           dataType: typeof data,
           dataKeys: data ? Object.keys(data) : 'N/A',
         });
+
+        // item 4.5: send push open tracking event to Edge Network and log result
+        try {
+          const trackingEvent = {
+            xdm: {
+              eventType: isOpen ? 'pushTracking.applicationOpened' : 'pushTracking.customAction',
+              pushNotificationTracking: {
+                pushProvider: Platform.OS === 'ios' ? 'apns' : 'fcm',
+                pushProviderMessageID:
+                  (data as any)?.adobe_message_id ||
+                  (data as any)?.adb_n_id ||
+                  response.notification.request.identifier,
+                ...((!isOpen) && { customAction: { actionID: actionIdentifier } }),
+              },
+              application: { launches: { value: 1 } },
+            },
+          };
+          await Edge.sendEvent(trackingEvent);
+          logStartup('[4.5] Push open tracking event sent to Edge successfully');
+        } catch (trackingError) {
+          console.error('[startup][4.5] Push open tracking event failed:', trackingError);
+        }
 
         let deepLinkData = data;
         if (typeof data === 'string') {
@@ -125,7 +177,7 @@ export default function RootLayout() {
           }
         }
 
-        const deepLink = deepLinkData?.adb_uri || deepLinkData?.adb_deeplink || deepLinkData?.uri;
+        const deepLink = (deepLinkData as any)?.adb_uri || (deepLinkData as any)?.adb_deeplink || (deepLinkData as any)?.uri;
 
         if (!deepLink) {
           logStartup('No deep link found in notification data');
@@ -142,13 +194,12 @@ export default function RootLayout() {
           const path = deepLink.split('://')[1];
           logStartup('Navigating to internal deep link', { path });
 
-          setTimeout(() => {
-            try {
-              Linking.openURL(deepLink);
-            } catch (error) {
+          // Defer navigation until animations finish — avoids race on cold start (item 10.4)
+          InteractionManager.runAfterInteractions(() => {
+            Linking.openURL(deepLink).catch((error: unknown) => {
               console.error('[startup] Navigation error:', error);
-            }
-          }, 100);
+            });
+          });
 
           return;
         }
@@ -158,12 +209,15 @@ export default function RootLayout() {
           Linking.openURL(deepLink);
         }
       });
+
+      return { receivedListener, responseListener };
     };
 
-    const listener = setupPushHandling();
+    const { receivedListener, responseListener } = setupPushHandling();
 
     return () => {
-      listener?.remove();
+      receivedListener?.remove();
+      responseListener?.remove();
     };
   }, []);
 
@@ -198,12 +252,12 @@ export default function RootLayout() {
             <Drawer.Screen name="(techScreens)/EdgeBridgeView" options={{ title: 'Edge Bridge', drawerItemStyle: { display: 'none' } }} />
             <Drawer.Screen name="(techScreens)/EdgeIdentityView" options={{ title: 'Edge Identity', drawerItemStyle: { display: 'none' } }} />
             <Drawer.Screen name="(techScreens)/EdgeView" options={{ title: 'Edge', drawerItemStyle: { display: 'none' } }} />
-            <Drawer.Screen name="(techScreens)/IdentityView" options={{ title: 'Identity', drawerItemStyle: { display: 'none' } }} />
             <Drawer.Screen name="(techScreens)/MessagingView" options={{ title: 'Messaging', drawerItemStyle: { display: 'none' } }} />
             <Drawer.Screen name="(techScreens)/OptimizeView" options={{ title: 'Optimize', drawerItemStyle: { display: 'none' } }} />
             <Drawer.Screen name="(techScreens)/PlacesView" options={{ title: 'Places', drawerItemStyle: { display: 'none' } }} />
             <Drawer.Screen name="(techScreens)/ProfileView" options={{ title: 'User Profile', drawerItemStyle: { display: 'none' } }} />
             <Drawer.Screen name="(techScreens)/PushNotificationView" options={{ title: 'Push', drawerItemStyle: { display: 'none' } }} />
+            <Drawer.Screen name="(techScreens)/IdentityView" options={{ title: 'Identity', drawerItemStyle: { display: 'none' } }} />
             <Drawer.Screen name="(techScreens)/TargetView" options={{ title: 'Target', drawerItemStyle: { display: 'none' } }} />
           </Drawer>
         </ThemeProvider>

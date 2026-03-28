@@ -110,18 +110,10 @@ const AppIdConfigView = () => {
           console.log('Places clearing not available or failed');
         }
         
-        try {
-          // Clear Consent data - reset to default "no"
-          const { Consent } = require('@adobe/react-native-aepedgeconsent');
-          const resetConsents = {
-            consents: {collect: {val: 'n'}}
-          };
-          Consent.update(resetConsents);
-          console.log('Consent data cleared and reset to "no"');
-        } catch (error) {
-          console.log('Consent clearing not available or failed');
-        }
-        
+        // NOTE: Consent is intentionally NOT reset here. Consent remains hardcoded to 'y'
+        // so that Edge events continue to flow after App ID is cleared.
+        // Resetting consent to 'n' would silently break all Edge events for the session.
+
         try {
           // Clear Target experience data
           Target.resetExperience();

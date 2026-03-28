@@ -50,6 +50,33 @@ function trackState() {
   return (
     <TechnicalScreen onBack={router.back}>
         <ThemedText style={styles.welcome}>Edge Bridge v{version}</ThemedText>
+
+        {/* item 5.4: EdgeBridge context — explain what this extension does and why
+            it is registered but idle in this app, so students aren't confused. */}
+        <ThemedText style={{ marginTop: 16, marginBottom: 8, fontWeight: 'bold' }}>
+          What is Edge Bridge?
+        </ThemedText>
+        <ThemedText style={{ marginBottom: 12, fontSize: 13, opacity: 0.85 }}>
+          Edge Bridge lets existing apps that use{' '}
+          <ThemedText style={{ fontFamily: 'monospace' }}>MobileCore.trackAction()</ThemedText> and{' '}
+          <ThemedText style={{ fontFamily: 'monospace' }}>MobileCore.trackState()</ThemedText> send
+          those legacy Analytics calls to the Edge Network without rewriting them as XDM events.
+          It acts as a translation layer during migrations.
+        </ThemedText>
+        <ThemedText style={{ marginBottom: 8, fontWeight: 'bold' }}>
+          Why is it idle in this app?
+        </ThemedText>
+        <ThemedText style={{ marginBottom: 12, fontSize: 13, opacity: 0.85 }}>
+          This app uses native Edge XDM events directly (
+          <ThemedText style={{ fontFamily: 'monospace' }}>Edge.sendEvent()</ThemedText>
+          ), which is the recommended modern pattern. Edge Bridge is registered here as a
+          reference — if you were migrating a legacy Analytics app, you would activate it
+          by configuring the Edge Bridge extension in your Launch tag property.
+        </ThemedText>
+        <ThemedText style={{ marginBottom: 16, fontWeight: 'bold' }}>
+          Demo buttons below (fires bridge calls):
+        </ThemedText>
+
         <Button title="MobileCore.trackAction()" onPress={trackAction} />
         <Button title="MobileCore.trackState()" onPress={trackState} />
     </TechnicalScreen>

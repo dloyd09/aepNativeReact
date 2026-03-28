@@ -27,6 +27,9 @@ export default function ProfileTab() {
   const { colors } = useTheme();
   const [ecid, setEcid] = useState('');
   const [identityMap, setIdentityMap] = useState({});
+  const [isLoginPending, setIsLoginPending] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [sdkInitTimedOut, setSdkInitTimedOut] = useState(false);
   const { profile, setProfile } = useProfileStorage();
   //console.log('Profile Context:', { profile });
 
@@ -67,8 +70,17 @@ export default function ProfileTab() {
       setLoggedIn(true);
       setFirstName(profile.firstName);
       setEmail(profile.email);
+      refreshIdentityState(); // item 3.4: ensure ECID/identityMap are in sync on restore
     }
-  }, [profile]);
+  }, [profile, refreshIdentityState]);
+
+  // Block login until ECID arrives. After 10 s with no ECID, unblock with a warning
+  // so students are not permanently stuck if SDK init failed silently (item 3.2).
+  useEffect(() => {
+    if (ecid) return;
+    const timer = setTimeout(() => setSdkInitTimedOut(true), 10000);
+    return () => clearTimeout(timer);
+  }, [ecid]);
 
   // Send page view when screen comes into focus
   useFocusEffect(
@@ -125,71 +137,97 @@ export default function ProfileTab() {
       return;
     }
 
-    // Update local state
-    setFirstName(inputFirstName);
-    setEmail(inputEmail);
-    setLoggedIn(true);
+    // item 3.1: show loading state while async chain runs — UI stays on login form
+    // until ECID and identityMap are confirmed populated.
+    setIsLoginPending(true);
     setError('');
 
-    // Update user profile in AEP UserProfile extension
-    UserProfile.updateUserAttributes({
-      firstName: inputFirstName,
-      email: inputEmail,
-    });
-    console.log('User profile updated in AEP');
-
-    // Create an IdentityMap and add the email and ECID identities
-    // ECID is primary (stable device identity), email is secondary (user identity)
-    const currentEcid = ecid || await Identity.getExperienceCloudId();
-    setEcid(currentEcid || '');
-
-    const newIdentityMap = new IdentityMap();
-    const emailIdentity = new IdentityItem(inputEmail, AuthenticatedState.AUTHENTICATED, false);
-    newIdentityMap.addItem(emailIdentity, 'Email');
-    if (currentEcid) {
-      const ecidIdentity = new IdentityItem(currentEcid, AuthenticatedState.AUTHENTICATED, true);
-      newIdentityMap.addItem(ecidIdentity, 'ECID');
-    }
-
-    // Update identities in AEP
-    await Identity.updateIdentities(newIdentityMap);
-    console.log('Email and ECID set as authenticated identities in AEP');
-
-    // Save profile to AsyncStorage
-    setProfile({ firstName: inputFirstName, email: inputEmail });
-    console.log('Profile saved to AsyncStorage:', { firstName: inputFirstName, email: inputEmail });
-
-    // Send login success event with updated identityMap
     try {
-      // Fetch updated identityMap after setting authenticated identities
-      const updatedIdentities = await Identity.getIdentities();
-      const currentIdentityMap = updatedIdentities.identityMap || updatedIdentities;
+      // item 10.2: await the UserProfile call so failures are visible in Assurance logs
+      try {
+        await UserProfile.updateUserAttributes({
+          firstName: inputFirstName,
+          email: inputEmail,
+        });
+        console.log('User profile updated in AEP');
+      } catch (profileError) {
+        console.warn('[Profile] UserProfile.updateUserAttributes failed:', profileError);
+      }
 
-      const loginEvent = await buildLoginEvent({
-        identityMap: currentIdentityMap,
-        profile: { firstName: inputFirstName, email: inputEmail },
-        success: true,
-        method: 'basic'
-      });
+      // Create an IdentityMap and add the email and ECID identities
+      // ECID is primary (stable device identity), email is secondary (user identity)
+      const currentEcid = ecid || await Identity.getExperienceCloudId();
+      setEcid(currentEcid || '');
 
-      console.log('📤 Sending login success event');
-      await Edge.sendEvent(loginEvent);
-      
-      console.log('✅ Login event sent successfully:', {
-        participantName: inputFirstName,
-        email: inputEmail,
-        loginStatus: 'logged_in'
-      });
+      const newIdentityMap = new IdentityMap();
+      const emailIdentity = new IdentityItem(inputEmail, AuthenticatedState.AUTHENTICATED, false);
+      newIdentityMap.addItem(emailIdentity, 'Email');
+      if (currentEcid) {
+        const ecidIdentity = new IdentityItem(currentEcid, AuthenticatedState.AUTHENTICATED, true);
+        newIdentityMap.addItem(ecidIdentity, 'ECID');
+      }
 
-      // Update local identityMap state
-      setIdentityMap(currentIdentityMap);
-      setEcid(currentIdentityMap?.ECID?.[0]?.id || currentEcid || '');
+      // Update identities in AEP
+      await Identity.updateIdentities(newIdentityMap);
+      console.log('Email and ECID set as authenticated identities in AEP');
+
+      // Save profile to AsyncStorage
+      setProfile({ firstName: inputFirstName, email: inputEmail });
+      console.log('Profile saved to AsyncStorage:', { firstName: inputFirstName, email: inputEmail });
+
+      // Send login success event with updated identityMap
+      try {
+        // Fetch updated identityMap after setting authenticated identities
+        const updatedIdentities = await Identity.getIdentities();
+        const currentIdentityMap = updatedIdentities.identityMap || updatedIdentities;
+
+        const loginEvent = await buildLoginEvent({
+          identityMap: currentIdentityMap,
+          profile: { firstName: inputFirstName, email: inputEmail },
+          success: true,
+          method: 'basic'
+        });
+
+        console.log('📤 Sending login success event');
+        await Edge.sendEvent(loginEvent);
+
+        console.log('✅ Login event sent successfully:', {
+          participantName: inputFirstName,
+          email: inputEmail,
+          loginStatus: 'logged_in'
+        });
+
+        // Update local identityMap state
+        setIdentityMap(currentIdentityMap);
+        setEcid(currentIdentityMap?.ECID?.[0]?.id || currentEcid || '');
+
+        // Login confirms ECID is present — retry any push token that was deferred
+        // because ECID was not available when the token first arrived.
+        try {
+          const { pushNotificationService } = require('../../src/utils/pushNotifications');
+          await pushNotificationService.retryPendingPushToken();
+        } catch (retryError) {
+          console.log('[Push] retryPendingPushToken skipped at login time:', retryError);
+        }
+      } catch (error) {
+        console.error('❌ Error sending login event:', error);
+      }
+
+      // item 3.1: switch to logged-in view only after ECID and identityMap are populated
+      setFirstName(inputFirstName);
+      setEmail(inputEmail);
+      setLoggedIn(true);
+
     } catch (error) {
-      console.error('❌ Error sending login event:', error);
+      console.error('❌ Error during login:', error);
+      setError('Login failed. Please try again.');
+    } finally {
+      setIsLoginPending(false);
     }
   };
 
   const handleLogout = async () => {
+    setIsLoggingOut(true); // item 3.3: disable button immediately so students don't double-tap
     const currentEmail = email;
     const currentEcid = ecid;
     // Send logout event BEFORE clearing state
@@ -246,7 +284,7 @@ export default function ProfileTab() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['left', 'right']}>
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
       <ScrollableContainer contentContainerStyle={{ justifyContent: 'center', alignItems: 'center', flexGrow: 1 }}>
       <Ionicons name="person" size={48} color={colors.primary} />
       <ThemedText type="title" style={{ marginTop: 12 }}>Profile</ThemedText>
@@ -258,7 +296,7 @@ export default function ProfileTab() {
             <ThemedText style={{ marginBottom: 12 }}>ECID: {ecid}</ThemedText>
             <ThemedText style={{ marginBottom: 12 }}>Identity Map: {JSON.stringify(identityMap)}</ThemedText>
             <Button title="Copy Identity Map" onPress={() => copyToClipboard(JSON.stringify(identityMap))} />
-            <Button title="Log Out" onPress={handleLogout} />
+            <Button title={isLoggingOut ? 'Logging out...' : 'Log Out'} onPress={handleLogout} disabled={isLoggingOut} />
           </>
         ) : (
           <>
@@ -287,8 +325,22 @@ export default function ProfileTab() {
               placeholderTextColor={colors.text + '99'}
               secureTextEntry
             />
+            {!ecid && !sdkInitTimedOut && (
+              <ThemedText style={{ color: colors.text + '99', marginBottom: 8, fontSize: 12 }}>
+                Adobe SDK initializing...
+              </ThemedText>
+            )}
+            {sdkInitTimedOut && !ecid && (
+              <ThemedText style={{ color: 'orange', marginBottom: 8, fontSize: 12 }}>
+                Adobe SDK may not be fully initialized. Check your App ID configuration.
+              </ThemedText>
+            )}
             {error ? <ThemedText style={{ color: 'red', marginBottom: 12 }}>{error}</ThemedText> : null}
-            <Button title="Log In" onPress={handleLogin} />
+            <Button
+              title={isLoginPending ? 'Logging in...' : 'Log In'}
+              onPress={handleLogin}
+              disabled={isLoginPending || (!ecid && !sdkInitTimedOut)}
+            />
           </>
         )}
       </View>

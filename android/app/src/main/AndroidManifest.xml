@@ -29,6 +29,7 @@
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="myapp"/>
+        <data android:scheme="exp+weretail"/>
       </intent-filter>
     </activity>
   </application>

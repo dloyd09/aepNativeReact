@@ -1,19 +1,20 @@
 /*
  * Adobe SDK Initialization Sequence:
- * 1. Set log level to ERROR
- * 2. Initialize MobileCore with App ID
- * 3. Wait 1 second for initialization to complete
- * 4. Verify all extensions are ready
- * 5. Set consent to "Yes" (default and collect)
- * 6. Configure messaging delegate for in-app messages
- * 
+ * 1. Initialize MobileCore with App ID (log level set by caller before this)
+ * 2. Poll extensionVersion() up to 5 times with 300ms backoff to confirm SDK ready
+ * 3. Verify all extensions are registered
+ * 4. Set consent to "Yes" (default and collect)
+ * 5. Configure messaging delegate for in-app messages
+ * 6. Retry any push token that arrived before ECID was available
+ *
  * IMPORTANT: Do not modify this sequence as it ensures proper initialization order
  * and prevents race conditions between MobileCore and extensions.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { NativeModules, Platform } from 'react-native';
-import { MobileCore, LogLevel } from '@adobe/react-native-aepcore';
+import { NativeModules, Platform, InteractionManager } from 'react-native';
+import { MobileCore } from '@adobe/react-native-aepcore';
+import { setAdobeReadiness } from './adobeReadiness';
 import { Assurance } from '@adobe/react-native-aepassurance';
 import { Edge } from '@adobe/react-native-aepedge';
 import { Identity } from '@adobe/react-native-aepedgeidentity';
@@ -74,14 +75,35 @@ export const initializeAdobe = async () => {
   }
 };
 
+// Tracks the App ID that was last successfully initialized (item 2.2).
+// Prevents calling initializeWithAppId() more than once per session with the
+// same ID (AppIdConfigView loads saved ID on mount, which would otherwise
+// trigger a second init immediately after _layout.tsx already ran one).
+let _initializedAppId: string | null = null;
+
+/**
+ * Reset init state so the next configureAdobe() call re-initializes even if the
+ * App ID hasn't changed. Call this from the instructor reset flow (item 1.3) after
+ * clearing all Adobe state, so the next student's SDK init runs fresh.
+ */
+export function resetAdobeInitState(): void {
+  _initializedAppId = null;
+  setAdobeReadiness('idle');
+}
+
 export const configureAdobe = async (appId: string) => {
+  if (_initializedAppId === appId) {
+    console.log('[Adobe] SDK already initialized with this App ID, skipping re-init');
+    return;
+  }
+
+  // Signal that init is now in progress (item 2.1)
+  setAdobeReadiness('initializing');
+
   try {
     console.log('Starting Adobe SDK configuration...');
-    
-    // Set log level to ERROR for normal operation (use VERBOSE for debugging)
-    console.log('Setting log level to ERROR');
-    MobileCore.setLogLevel(LogLevel.ERROR);
-    
+    // Log level is controlled by the caller — _layout.tsx sets VERBOSE (item 2.3)
+
     // Initialize with App ID
     console.log('Initializing MobileCore with App ID:', appId);
     await MobileCore.initializeWithAppId(appId);
@@ -98,9 +120,25 @@ export const configureAdobe = async (appId: string) => {
       console.error('Error applying Adobe configuration:', error);
     }
     
-    // Wait a moment for initialization to complete
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
+    // Poll for SDK readiness instead of a fixed sleep — on slow devices or cold starts
+    // 1 second is not enough, and on fast devices it is unnecessary overhead.
+    // Poll MobileCore.extensionVersion() up to 5 times with 300ms backoff.
+    let sdkReady = false;
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        await MobileCore.extensionVersion();
+        sdkReady = true;
+        console.log(`Adobe SDK ready after attempt ${attempt}`);
+        break;
+      } catch {
+        console.log(`Adobe SDK not ready yet (attempt ${attempt}/5), waiting 300ms...`);
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    }
+    if (!sdkReady) {
+      console.warn('Adobe SDK did not confirm ready after 5 attempts — proceeding anyway.');
+    }
+
     // Verify all extensions are ready
     try {
       console.log('Verifying all Adobe extensions are ready...');
@@ -182,15 +220,13 @@ export const configureAdobe = async (appId: string) => {
           // Handle deep links from in-app messages
           if (url && typeof url === 'string') {
             if (url.startsWith('myapp://') || url.startsWith('com.cmtBootCamp.AEPSampleAppNewArchEnabled://')) {
-              // Internal deep link
+              // Internal deep link — defer until animations finish (item 10.4)
               console.log('📱 In-app message: Navigating to internal route:', url);
-              setTimeout(() => {
-                try {
-                  Linking.openURL(url);
-                } catch (error) {
+              InteractionManager.runAfterInteractions(() => {
+                Linking.openURL(url).catch((error: unknown) => {
                   console.error('❌ In-app message navigation error:', error);
-                }
-              }, 100);
+                });
+              });
             } else if (url.startsWith('http://') || url.startsWith('https://')) {
               // External URL
               console.log('🌐 In-app message: Opening external URL:', url);
@@ -226,8 +262,24 @@ export const configureAdobe = async (appId: string) => {
       // Note: This might not be an error - could just mean no messages available
     }
     
+    // Retry any push token that was deferred because ECID was not yet available
+    // when the token arrived (common on first open before SDK finishes init).
+    // Dynamic require breaks the circular dependency:
+    //   pushNotifications.ts → adobeConfig.ts (getStoredAppId)
+    //   adobeConfig.ts → pushNotifications.ts (retryPendingPushToken)
+    try {
+      const { pushNotificationService } = require('./pushNotifications');
+      await pushNotificationService.retryPendingPushToken();
+    } catch (retryError) {
+      console.log('[Push] retryPendingPushToken skipped at configureAdobe time:', retryError);
+    }
+
+    _initializedAppId = appId; // mark initialized only on full success (item 2.2)
+    setAdobeReadiness('ready'); // signal screens that SDK + ECID are ready (item 2.1)
     console.log('Adobe SDK initialized successfully');
   } catch (error) {
+    _initializedAppId = null; // reset so the next call can retry (item 2.2)
+    setAdobeReadiness('error'); // let screens surface the failure (item 2.1)
     console.error('Error configuring Adobe SDK:', error);
     throw error;
   }

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Button, ScrollView, ScrollViewProps, StyleProp, StyleSheet, ViewStyle } from 'react-native';
+import { Button, KeyboardAvoidingView, Platform, ScrollView, ScrollViewProps, StyleProp, StyleSheet, ViewStyle } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedView } from './ThemedView';
 
 type TechnicalScreenProps = {
@@ -17,17 +18,24 @@ export function TechnicalScreen({
   contentContainerStyle,
   scrollViewProps,
 }: TechnicalScreenProps) {
+  const insets = useSafeAreaInsets();
   return (
     <ThemedView style={styles.container}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.content, contentContainerStyle]}
-        keyboardShouldPersistTaps="handled"
-        {...scrollViewProps}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={insets.top}
       >
-        {showBackButton ? <Button onPress={onBack} title="Go to main page" /> : null}
-        {children}
-      </ScrollView>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[styles.content, { marginTop: insets.top + 12 }, contentContainerStyle]}
+          keyboardShouldPersistTaps="handled"
+          {...scrollViewProps}
+        >
+          {showBackButton ? <Button onPress={onBack} title="Go to main page" /> : null}
+          {children}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </ThemedView>
   );
 }
@@ -40,7 +48,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    marginTop: 75,
     paddingBottom: 100,
     paddingHorizontal: 20,
   },

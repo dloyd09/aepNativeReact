@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
 import { ScrollableContainer } from '../../components/ScrollableContainer';
@@ -14,7 +14,6 @@ import { useCart } from '../../components/CartContext';
 import { useProfileStorage } from '../../hooks/useProfileStorage';
 import { useCartSession } from '../../hooks/useCartSession';
 import { buildPageViewEvent, buildPurchaseEvent } from '../../src/utils/xdmEventBuilders';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { refreshDecisioningSurfaceFromStoredConfig } from '../../src/utils/decisioningItems';
 
 /** Demo flat shipping for CJA commerce.shipping.shippingAmount (no live rate API in app). */
@@ -29,11 +28,20 @@ export default function Checkout() {
   const [firstName, setFirstName] = useState('');
   const [email, setEmail] = useState('');
   const { clearCart, cart } = useCart();
-  const { profile } = useProfileStorage();
+  const { profile, isProfileLoading } = useProfileStorage();
   const { cartSessionId, isLoading: isCartSessionLoading, resetCartSession } = useCartSession();
   
   const [identityMap, setIdentityMap] = useState({});
   const [purchaseInProgress, setPurchaseInProgress] = useState(false); // Prevent duplicate page views after purchase
+  const purchaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // item 11.2: clear the post-purchase navigation timer if the component unmounts
+  // before the 3 s delay elapses (e.g. student navigates away mid-confetti).
+  useEffect(() => {
+    return () => {
+      if (purchaseTimerRef.current) clearTimeout(purchaseTimerRef.current);
+    };
+  }, []);
 
   // Memoize modifiedCart to prevent re-render issues
   const modifiedCart = useMemo(() => 
@@ -41,15 +49,21 @@ export default function Checkout() {
     [cart]
   );
 
-  // Fetch Identity Map
+  // Fetch Identity Map on mount. On cold start the SDK may not be ready yet — catch
+  // the rejection and leave identityMap as the empty default. The useFocusEffect below
+  // already guards on identityMap before sending any event, so this is safe.
   useEffect(() => {
-    Identity.getIdentities().then((result) => {
-      if (result && result.identityMap) {
-        setIdentityMap(result.identityMap);
-      } else {
-        setIdentityMap(result);
-      }
-    });
+    Identity.getIdentities()
+      .then((result) => {
+        if (result && result.identityMap) {
+          setIdentityMap(result.identityMap);
+        } else {
+          setIdentityMap(result);
+        }
+      })
+      .catch((err) =>
+        console.warn('[Checkout] Identity.getIdentities() failed on mount — SDK may not be ready yet:', err)
+      );
   }, []);
 
   // Send page view when screen comes into focus
@@ -59,6 +73,13 @@ export default function Checkout() {
         // Don't send page view if purchase is in progress (prevents duplicate after cart session reset)
         if (purchaseInProgress) {
           console.log('Checkout - Purchase in progress, skipping page view');
+          return;
+        }
+
+        // Wait for the profile AsyncStorage read to complete before sending — avoids
+        // empty-identity XDM events on cold start while the hook is still loading.
+        if (isProfileLoading) {
+          console.log('Checkout - Profile not yet loaded from storage, skipping page view');
           return;
         }
 
@@ -73,22 +94,11 @@ export default function Checkout() {
           return;
         }
 
-        // Get fresh profile from AsyncStorage
-        let currentProfile = { firstName: '', email: '' };
-        try {
-          const storedProfile = await AsyncStorage.getItem('userProfile');
-          if (storedProfile) {
-            currentProfile = JSON.parse(storedProfile);
-          }
-        } catch (error) {
-          console.error('Failed to read profile:', error);
-        }
-
         // Send page view
         try {
           const pageViewEvent = await buildPageViewEvent({
             identityMap,
-            profile: currentProfile,
+            profile,
             pageTitle: 'Checkout',
             pagePath: '/checkout',
             pageType: 'checkout',
@@ -103,7 +113,7 @@ export default function Checkout() {
             itemCount: modifiedCart.length,
             totalValue: modifiedCart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2),
             cartSessionId,
-            participantName: currentProfile?.firstName || 'Guest User'
+            participantName: profile?.firstName || 'Guest User'
           });
         } catch (error) {
           console.error('❌ Error sending checkout page view:', error);
@@ -111,7 +121,7 @@ export default function Checkout() {
       };
 
       handleFocus();
-    }, [modifiedCart, identityMap, cartSessionId, isCartSessionLoading, purchaseInProgress])
+    }, [modifiedCart, identityMap, cartSessionId, isCartSessionLoading, purchaseInProgress, isProfileLoading])
   );
 
   useEffect(() => {
@@ -133,23 +143,12 @@ export default function Checkout() {
       const shippingAmount = DEMO_SHIPPING_USD;
       const totalAmount = parseFloat((subtotal + shippingAmount + taxAmount).toFixed(2));
 
-      // Get fresh profile from AsyncStorage
-      let currentProfile = { firstName: '', email: '' };
-      try {
-        const storedProfile = await AsyncStorage.getItem('userProfile');
-        if (storedProfile) {
-          currentProfile = JSON.parse(storedProfile);
-        }
-      } catch (error) {
-        console.error('Failed to read profile:', error);
-      }
-
       // Send purchase event
       const purchaseID = `order-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       
       const purchaseEvent = await buildPurchaseEvent({
         identityMap,
-        profile: currentProfile,
+        profile,
         purchaseID,
         cartSessionId: cartSessionId || 'unknown',
         productListItems: modifiedCart,
@@ -167,7 +166,7 @@ export default function Checkout() {
         itemCount: modifiedCart.length,
         totalAmount,
         cartSessionId,
-        participantName: currentProfile?.firstName || 'Guest User'
+        participantName: profile?.firstName || 'Guest User'
       });
 
       // Refresh in-app messages after purchase (to fetch any triggered messages)
@@ -191,7 +190,7 @@ export default function Checkout() {
       // Clear cart immediately (before navigation)
       clearCart();
       
-      setTimeout(() => {
+      purchaseTimerRef.current = setTimeout(() => {
         setPurchaseInProgress(false); // Reset flag before navigation
         setShowConfetti(false);
         router.replace('/home');
@@ -205,10 +204,10 @@ export default function Checkout() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['left', 'right']}>
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
       <ThemedView style={{ flex: 1 }}>
         <ScrollableContainer>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 10, alignSelf: 'flex-start', marginBottom: 16 }}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 16, alignSelf: 'flex-start', marginBottom: 16 }}>
           <ThemedText style={{ color: colors.primary }}>Back</ThemedText>
         </TouchableOpacity>
         <ThemedText style={styles.header}>Checkout</ThemedText>

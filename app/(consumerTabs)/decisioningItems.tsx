@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, Image, StyleSheet, Linking } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Messaging } from '@adobe/react-native-aepmessaging';
 import { Edge } from '@adobe/react-native-aepedge';
@@ -9,6 +10,7 @@ import { ThemedView } from '@/components/ThemedView';
 import { useTheme, useFocusEffect } from '@react-navigation/native';
 import { useCart } from '@/components/CartContext';
 import { useCartSession } from '@/hooks/useCartSession';
+import { useProfileStorage } from '@/hooks/useProfileStorage';
 import { buildPageViewEvent, buildProductListAddEvent } from '@/src/utils/xdmEventBuilders';
 import { useRouter } from 'expo-router';
 import {
@@ -109,8 +111,10 @@ const DecisioningItemCard = ({
 
 export default function DecisioningItemsTab() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { addToCart, isInCart } = useCart();
   const { cartSessionId, isLoading: isCartSessionLoading } = useCartSession();
+  const { profile, isProfileLoading } = useProfileStorage();
   const router = useRouter();
   const [config, setConfig] = useState<DecisioningItemsConfig | null>(null);
   const [items, setItems] = useState<DecisioningItem[]>([]);
@@ -260,14 +264,17 @@ export default function DecisioningItemsTab() {
   });
 
   const refreshIdentityMap = useCallback(async () => {
-    const result = await Identity.getIdentities();
-    if (result && (result as any).identityMap) {
-      setIdentityMap((result as any).identityMap);
-      return (result as any).identityMap;
+    try {
+      const result = await Identity.getIdentities();
+      if (result && (result as any).identityMap) {
+        setIdentityMap((result as any).identityMap);
+        return (result as any).identityMap;
+      }
+      setIdentityMap(result);
+      return result;
+    } catch {
+      return {};
     }
-
-    setIdentityMap(result);
-    return result;
   }, []);
 
   useEffect(() => {
@@ -372,26 +379,21 @@ export default function DecisioningItemsTab() {
       const handleFocus = async () => {
         await loadConfigAndFetchItems();
 
+        if (isProfileLoading) {
+          console.log('DecisioningItems - Profile not yet loaded from storage, skipping page view');
+          return;
+        }
+
         const currentIdentityMap = await refreshIdentityMap();
         if (!currentIdentityMap || Object.keys(currentIdentityMap).length === 0) {
           console.log('DecisioningItems - IdentityMap not ready, skipping page view');
           return;
         }
 
-        let currentProfile = { firstName: '', email: '' };
-        try {
-          const storedProfile = await AsyncStorage.getItem('userProfile');
-          if (storedProfile) {
-            currentProfile = JSON.parse(storedProfile);
-          }
-        } catch (profileError) {
-          console.error('Failed to read profile:', profileError);
-        }
-
         try {
           const pageViewEvent = await buildPageViewEvent({
             identityMap: currentIdentityMap,
-            profile: currentProfile,
+            profile,
             pageTitle: 'Decisioning Items',
             pagePath: '/decisioning-items',
             pageType: 'decisioning',
@@ -404,12 +406,16 @@ export default function DecisioningItemsTab() {
       };
 
       handleFocus();
-    }, [loadConfigAndFetchItems, refreshIdentityMap])
+    }, [loadConfigAndFetchItems, refreshIdentityMap, isProfileLoading, profile])
   );
 
   const handleAddToCart = async (item: DecisioningItem) => {
     const content = parseDecisioningItemContent(item);
-    await trackDecisioningItemInteraction(item, 'click');
+    try {
+      await trackDecisioningItemInteraction(item, 'click');
+    } catch (trackError) {
+      console.error('[DecisioningItems] Failed to track interaction:', trackError);
+    }
 
     addToCart({
       name: content.title || 'Unnamed Offer',
@@ -431,20 +437,10 @@ export default function DecisioningItemsTab() {
       return;
     }
 
-    let currentProfile = { firstName: '', email: '' };
-    try {
-      const storedProfile = await AsyncStorage.getItem('userProfile');
-      if (storedProfile) {
-        currentProfile = JSON.parse(storedProfile);
-      }
-    } catch (profileError) {
-      console.error('Failed to read profile:', profileError);
-    }
-
     try {
       const productListAddEvent = await buildProductListAddEvent({
         identityMap: currentIdentityMap,
-        profile: currentProfile,
+        profile,
         product: {
           sku: item.id,
           name: content.title || 'Unnamed Offer',
@@ -576,7 +572,7 @@ export default function DecisioningItemsTab() {
   };
 
   return (
-    <ThemedView style={{ flex: 1 }}>
+    <ThemedView style={{ flex: 1, paddingTop: insets.top }}>
       <FlatList
         data={items}
         renderItem={({ item, index }) => (

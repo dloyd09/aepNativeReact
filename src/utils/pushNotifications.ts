@@ -1,8 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
-import { Messaging } from '@adobe/react-native-aepmessaging';
 import { MobileCore } from '@adobe/react-native-aepcore';
+import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { getStoredAppId } from './adobeConfig';
 
 // Configure how notifications are handled when the app is in the foreground
@@ -27,6 +27,12 @@ export class PushNotificationService {
   private devicePushToken: string | null = null;
   private fcmMessageHandlingInitialized = false;
   private fcmTokenRefreshListenerInitialized = false;
+  // Token deferred because ECID was not yet available at registration time.
+  // Cleared by retryPendingPushToken() once ECID resolves, or by clearPendingToken() on reset.
+  private pendingPushToken: string | null = null;
+  // APNs token refresh subscription (iOS only). Stored so it can be removed in cleanup()
+  // and not leak when the service is re-initialized after an instructor reset.
+  private apnsTokenRefreshSubscription: Notifications.Subscription | null = null;
 
   private constructor() {}
 
@@ -129,6 +135,20 @@ export class PushNotificationService {
         }
         
         this.expoPushToken = token;
+
+        // item 4.1: log token acquisition with platform label, truncated value, and timestamp
+        const tokenTs = new Date().toISOString();
+        const tokenTruncated = token.length > 16
+          ? `${token.substring(0, 8)}…${token.substring(token.length - 8)}`
+          : token;
+        let tokenPlatform: string;
+        if (Platform.OS === 'ios') {
+          tokenPlatform = token.startsWith('MockToken_') ? 'iOS/simulator-mock' : 'iOS/APNs';
+        } else {
+          tokenPlatform = token.startsWith('AndroidMockToken_') ? 'Android/mock' : 'Android/FCM';
+        }
+        console.log(`[Push][4.1] Token acquired — platform: ${tokenPlatform}, value: ${tokenTruncated}, ts: ${tokenTs}`);
+
         console.log('Successfully registered for notifications');
         
         // Set up FCM message handling for Android
@@ -156,11 +176,28 @@ export class PushNotificationService {
   }
 
   /**
+   * Remove all active push listeners. Call at the start of initialize() to prevent
+   * duplicate listeners when the service is re-initialized (e.g. after instructor reset).
+   * Also called from clearAdobePushTokens() to ensure a full clean state.
+   */
+  cleanup(): void {
+    if (this.apnsTokenRefreshSubscription) {
+      this.apnsTokenRefreshSubscription.remove();
+      this.apnsTokenRefreshSubscription = null;
+      console.log('[Push] APNs token refresh listener removed.');
+    }
+  }
+
+  /**
    * Initialize push handling after Adobe SDK startup.
    * If permission already exists, sync the current platform token back to Adobe.
    */
   async initialize(): Promise<void> {
     try {
+      // Remove existing listeners before attaching new ones — prevents duplicate listeners
+      // if initialize() is called again (e.g. after configureAdobe re-runs on App ID change).
+      this.cleanup();
+
       const appId = await getStoredAppId();
       if (!appId) {
         console.log('PushNotificationService.initialize(): Adobe App ID not configured; skipping token sync.');
@@ -180,6 +217,27 @@ export class PushNotificationService {
       if (status !== 'granted') {
         console.log('PushNotificationService.initialize(): notification permission not granted; skipping token sync.');
         return;
+      }
+
+      // iOS: listen for APNs token rotation and re-register the new token with Adobe.
+      // Android token rotation is handled by FCM onTokenRefresh (setupFCMTokenRefreshHandling).
+      // Without this listener, a rotated APNs token is never updated in Adobe and
+      // subsequent AJO journey sends to that device bounce silently.
+      if (Platform.OS === 'ios') {
+        this.apnsTokenRefreshSubscription = Notifications.addPushTokenListener(
+          async (tokenData) => {
+            const newToken = tokenData.data;
+            console.log('[Push] APNs token rotated — attempting re-registration with Adobe');
+            if (newToken && !newToken.startsWith('Mock')) {
+              this.devicePushToken = newToken;
+              this.expoPushToken = newToken;
+              // registerTokenWithAdobe includes the ECID guard from item 4.2 —
+              // if ECID is still absent the new token will be stored as pendingPushToken.
+              await this.registerTokenWithAdobe(newToken);
+            }
+          }
+        );
+        console.log('[Push] APNs token refresh listener registered (iOS).');
       }
 
       const currentToken = await this.getCurrentPlatformToken();
@@ -309,17 +367,29 @@ export class PushNotificationService {
         return;
       }
       
-      console.log('Adobe SDK initialized with App ID:', appId);
-      
-      // Register with MobileCore API (for Adobe services and Assurance compatibility)
+      console.log('[Push] Adobe SDK initialized with App ID:', appId);
+
+      // ECID must be present before registering — without it Adobe stores the token
+      // without a profile association and AJO journeys cannot deliver to this device.
+      // This is the root cause of the 4/5 iOS TestFlight push failures (2026-03-26).
+      const ecid = await Identity.getExperienceCloudId();
+      if (!ecid) {
+        console.warn('[Push] Push token obtained but ECID not yet available — deferring Adobe registration.');
+        this.pendingPushToken = token;
+        return;
+      }
+
+      console.log('[Push] ECID confirmed present — registering push token with Adobe');
+
+      // Register with MobileCore (required for AJO push delivery and Assurance visibility)
       try {
         await MobileCore.setPushIdentifier(token);
-        console.log('✅ Successfully registered with MobileCore (Adobe services and Assurance compatibility)');
+        console.log('✅ Push token registered with Adobe (MobileCore)');
       } catch (error) {
-        console.error('Error registering with MobileCore:', error);
+        console.error('[Push] Error registering with MobileCore:', error);
       }
-      
-      console.log('Push token registered with Adobe services successfully');
+
+      console.log('[Push] Push token registered with Adobe services successfully');
     } catch (error) {
       console.error('Error registering token with Adobe:', error);
       // Don't throw - this shouldn't break the main flow
@@ -402,8 +472,6 @@ export class PushNotificationService {
         return;
       }
 
-      this.fcmMessageHandlingInitialized = true;
-      
       // Set up foreground message listener
       firebaseMessaging().onMessage(async (remoteMessage: any) => {
         console.log('FCM message received in foreground:', remoteMessage);
@@ -448,6 +516,9 @@ export class PushNotificationService {
         // Background messages are handled automatically by FCM
       });
 
+      // Mark initialized only after all handlers are successfully registered — not before,
+      // so a setup failure leaves the flag false and allows retry on next call.
+      this.fcmMessageHandlingInitialized = true;
       console.log('FCM message handlers set up successfully');
     } catch (error) {
       this.fcmMessageHandlingInitialized = false;
@@ -468,8 +539,6 @@ export class PushNotificationService {
         return;
       }
 
-      this.fcmTokenRefreshListenerInitialized = true;
-
       firebaseMessaging().onTokenRefresh(async (refreshedToken: string) => {
         console.log('FCM token refreshed:', refreshedToken);
         this.expoPushToken = refreshedToken;
@@ -480,6 +549,11 @@ export class PushNotificationService {
           console.error('Failed to register refreshed FCM token with Adobe:', error);
         }
       });
+
+      // Mark initialized only after listener is successfully registered — not before,
+      // so a setup failure leaves the flag false and allows retry on next call.
+      this.fcmTokenRefreshListenerInitialized = true;
+      console.log('FCM token refresh handler set up successfully');
     } catch (error) {
       this.fcmTokenRefreshListenerInitialized = false;
       console.error('Error setting up FCM token refresh handling:', error);
@@ -533,11 +607,65 @@ export class PushNotificationService {
   }
 
   /**
+   * Retry registering a push token that was deferred because ECID was not ready.
+   * Call this from: end of configureAdobe(), after successful login.
+   * Safe to call when no token is pending — it exits immediately.
+   */
+  async retryPendingPushToken(): Promise<void> {
+    if (!this.pendingPushToken) {
+      return;
+    }
+
+    try {
+      const appId = await getStoredAppId();
+      if (!appId) {
+        console.log('[Push] retryPendingPushToken: App ID not configured, skipping retry.');
+        return;
+      }
+
+      const ecid = await Identity.getExperienceCloudId();
+      if (!ecid) {
+        console.log('[Push] retryPendingPushToken: ECID still not available, retry deferred.');
+        return;
+      }
+
+      // Capture and clear before the async call so a concurrent retry doesn't double-register
+      const tokenToRegister = this.pendingPushToken;
+      this.pendingPushToken = null;
+
+      console.log('[Push] ECID now available — registering deferred push token with Adobe');
+      await MobileCore.setPushIdentifier(tokenToRegister);
+      console.log('✅ Deferred push token registered with Adobe successfully.');
+    } catch (error) {
+      console.error('[Push] retryPendingPushToken failed:', error);
+    }
+  }
+
+  /**
+   * Clear the pending push token without registering it.
+   * Call this from the instructor reset flow so a pre-reset token cannot
+   * be auto-registered after the reset produces a new ECID.
+   */
+  clearPendingToken(): void {
+    if (this.pendingPushToken) {
+      console.log('[Push] Pending push token cleared (was deferred, now discarded).');
+      this.pendingPushToken = null;
+    }
+  }
+
+  /**
    * Clear push tokens from Adobe and reset profile (for fixing token mismatches)
    */
   async clearAdobePushTokens(): Promise<boolean> {
     try {
-      console.log('Clearing push tokens from Adobe...');
+      console.log('[Push] Clearing push tokens from Adobe...');
+
+      // Clear pending token first — prevents a deferred pre-reset token from being
+      // registered automatically once the new session produces an ECID.
+      this.clearPendingToken();
+
+      // Remove active listeners so the next initialize() starts clean.
+      this.cleanup();
       
       // Clear push identifier from MobileCore
       try {

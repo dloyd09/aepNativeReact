@@ -300,6 +300,16 @@ export const buildPageViewEvent = async (
     };
   }
 
+  // Category/browse listings: fire commerce.productListViews so AJO journeys that qualify
+  // on browse behavior (e.g. "browsed Men's but didn't buy") have a signal to work with (item 6.1).
+  if (params.pageType === 'category') {
+    xdmData.commerce = {
+      productListViews: {
+        value: 1
+      }
+    };
+  }
+
   // Return ExperienceEvent instance (required by Adobe SDK)
   return new ExperienceEvent({ xdmData });
 };

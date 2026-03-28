@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ThemedView } from '../../components/ThemedView';
 import { ThemedText } from '../../components/ThemedText';
 import { View, TouchableOpacity, StyleSheet, Button, Image, FlatList } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, useFocusEffect } from '@react-navigation/native';
 import { Optimize, DecisionScope } from '@adobe/react-native-aepoptimize';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -9,6 +10,7 @@ import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { Edge } from '@adobe/react-native-aepedge';
 import { useCart } from '../../components/CartContext';
 import { useCartSession } from '../../hooks/useCartSession';
+import { useProfileStorage } from '../../hooks/useProfileStorage';
 import { buildPageViewEvent, buildProductListAddEvent } from '../../src/utils/xdmEventBuilders';
 import {
   ConsumerOffer,
@@ -21,34 +23,7 @@ import {
   trackOfferTap,
 } from '../../src/utils/offersOptimize';
 
-const PROFILE_KEY = 'userProfile';
 const DECISION_SCOPE_KEY = 'optimize_decision_scope';
-
-export function useProfileStorage() {
-  const [profile, setProfile] = useState({ firstName: '', email: '' });
-  const [decisionScope, setDecisionScope] = useState('');
-
-  useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        const storedProfile = await AsyncStorage.getItem(PROFILE_KEY);
-        if (storedProfile) {
-          setProfile(JSON.parse(storedProfile));
-        }
-        const storedScope = await AsyncStorage.getItem(DECISION_SCOPE_KEY);
-        if (storedScope) {
-          setDecisionScope(storedScope);
-        }
-      } catch (error) {
-        console.error('Failed to load data from storage:', error);
-      }
-    };
-
-    loadProfile();
-  }, []);
-
-  return { profile, setProfile, decisionScope, setDecisionScope };
-}
 
 const OfferCard = ({
   offer,
@@ -119,7 +94,9 @@ const OfferCard = ({
 
 export default function OffersTab() {
   const { colors } = useTheme();
-  const { setProfile, decisionScope, setDecisionScope } = useProfileStorage();
+  const insets = useSafeAreaInsets();
+  const { profile, isProfileLoading } = useProfileStorage();
+  const [decisionScope, setDecisionScope] = useState('');
   const [offers, setOffers] = useState<ConsumerOffer[]>([]);
   const { addToCart, isInCart } = useCart();
   const { cartSessionId, isLoading: isCartSessionLoading } = useCartSession();
@@ -165,14 +142,17 @@ export default function OffersTab() {
   });
 
   const refreshIdentityMap = useCallback(async () => {
-    const result = await Identity.getIdentities();
-    if (result && (result as any).identityMap) {
-      setIdentityMap((result as any).identityMap);
-      return (result as any).identityMap;
+    try {
+      const result = await Identity.getIdentities();
+      if (result && (result as any).identityMap) {
+        setIdentityMap((result as any).identityMap);
+        return (result as any).identityMap;
+      }
+      setIdentityMap(result);
+      return result;
+    } catch {
+      return {};
     }
-
-    setIdentityMap(result);
-    return result;
   }, []);
 
   useEffect(() => {
@@ -229,11 +209,16 @@ export default function OffersTab() {
       setOffers(nextOffers);
     });
 
-    Optimize.onPropositionUpdate({
+    const subscription = Optimize.onPropositionUpdate({
       call(propositions) {
         updateHandler(propositions);
       },
     });
+
+    return () => {
+      // Remove listener on unmount to prevent duplicate handlers after re-mount
+      (subscription as any)?.remove?.();
+    };
   }, []);
 
   useFocusEffect(
@@ -241,11 +226,6 @@ export default function OffersTab() {
       const loadProfileAndScope = async () => {
         try {
           await refreshIdentityMap();
-
-          const storedProfile = await AsyncStorage.getItem(PROFILE_KEY);
-          if (storedProfile) {
-            setProfile(JSON.parse(storedProfile));
-          }
 
           const storedScope = await AsyncStorage.getItem(DECISION_SCOPE_KEY);
           if (storedScope) {
@@ -263,12 +243,17 @@ export default function OffersTab() {
       };
 
       loadProfileAndScope();
-    }, [fetchOffersForScope, refreshIdentityMap, setDecisionScope, setProfile])
+    }, [fetchOffersForScope, refreshIdentityMap, setDecisionScope])
   );
 
   useFocusEffect(
     useCallback(() => {
       const handleFocus = async () => {
+        if (isProfileLoading) {
+          console.log('Offers - Profile not yet loaded from storage, skipping page view');
+          return;
+        }
+
         const currentIdentityMap = await refreshIdentityMap();
 
         if (!currentIdentityMap || Object.keys(currentIdentityMap).length === 0) {
@@ -276,20 +261,10 @@ export default function OffersTab() {
           return;
         }
 
-        let currentProfile = { firstName: '', email: '' };
-        try {
-          const storedProfile = await AsyncStorage.getItem(PROFILE_KEY);
-          if (storedProfile) {
-            currentProfile = JSON.parse(storedProfile);
-          }
-        } catch (error) {
-          console.error('Failed to read profile:', error);
-        }
-
         try {
           const pageViewEvent = await buildPageViewEvent({
             identityMap: currentIdentityMap,
-            profile: currentProfile,
+            profile,
             pageTitle: 'Offers',
             pagePath: '/offers',
             pageType: 'offers',
@@ -304,7 +279,7 @@ export default function OffersTab() {
       };
 
       handleFocus();
-    }, [refreshIdentityMap])
+    }, [refreshIdentityMap, isProfileLoading, profile])
   );
 
   const handleAddToCartWithTracking = async (offer: ConsumerOffer) => {
@@ -330,20 +305,10 @@ export default function OffersTab() {
       return;
     }
 
-    let currentProfile = { firstName: '', email: '' };
-    try {
-      const storedProfile = await AsyncStorage.getItem(PROFILE_KEY);
-      if (storedProfile) {
-        currentProfile = JSON.parse(storedProfile);
-      }
-    } catch (error) {
-      console.error('Failed to read profile:', error);
-    }
-
     try {
       const productListAddEvent = await buildProductListAddEvent({
         identityMap: currentIdentityMap,
-        profile: currentProfile,
+        profile,
         product: {
           sku: offer.sku || 'defaultSku',
           name: offer.title || 'Unnamed Offer',
@@ -368,9 +333,9 @@ export default function OffersTab() {
   };
 
   return (
-    <ThemedView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+    <ThemedView style={{ flex: 1, paddingTop: insets.top }}>
       {offers.length === 0 ? (
-        <View style={{ padding: 20, alignItems: 'center' }}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           <ThemedText style={{ fontSize: 16, color: colors.text, marginBottom: 10 }}>
             No offers available
           </ThemedText>
@@ -383,6 +348,7 @@ export default function OffersTab() {
         </View>
       ) : (
         <FlatList
+          style={{ flex: 1 }}
           data={offers}
           renderItem={({ item }) => (
             <OfferCard

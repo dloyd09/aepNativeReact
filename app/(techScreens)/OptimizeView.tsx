@@ -258,17 +258,6 @@ export default function OptimizeView() {
         return;
       }
 
-      // Add a timeout to check if the listener fires after a delay
-      setTimeout(() => {
-        console.log("🔵 ⏰ 5 seconds passed - checking if listener fired...");
-        if (proposition) {
-          console.log("🔵 ✅ Listener worked - proposition state was updated");
-        } else {
-          console.log("🔴 ❌ Listener did not fire - no proposition received");
-          console.log("🔴 This suggests the request may have failed or the response wasn't processed");
-        }
-      }, 5000);
-
       Alert.alert("Success", "Proposition update request sent. Check console for response.");
     } catch (err) {
       console.error("🔴 Error in updatePropositions:", err);

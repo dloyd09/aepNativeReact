@@ -1,4 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getAdobeReadiness, AdobeReadinessState } from './adobeReadiness';
+import { getStoredAppId } from './adobeConfig';
 
 export const LAST_RUNTIME_ERROR_KEY = '@last_runtime_error';
 
@@ -26,4 +28,26 @@ export async function clearPersistedRuntimeError(): Promise<void> {
   } catch (error) {
     console.error('Failed to clear persisted runtime error:', error);
   }
+}
+
+/**
+ * Diagnostic snapshot for tech screens and Assurance debugging flows (item 5.3).
+ * Requires item 2.1 (adobeReadiness) to surface SDK state — do not call before
+ * the SDK init sequence has started or readiness will always read 'idle'.
+ */
+export type DiagnosticSnapshot = {
+  sdkReadiness: AdobeReadinessState;
+  appIdConfigured: boolean;
+  appId: string | null;
+  timestamp: string;
+};
+
+export async function getDiagnosticSnapshot(): Promise<DiagnosticSnapshot> {
+  const appId = await getStoredAppId();
+  return {
+    sdkReadiness: getAdobeReadiness(),
+    appIdConfigured: Boolean(appId && appId.trim()),
+    appId,
+    timestamp: new Date().toISOString(),
+  };
 }

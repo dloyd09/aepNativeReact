@@ -2,7 +2,7 @@
   "expo": {
     "name": "WeRetail",
     "slug": "WeRetail",
-    "version": "1.0.8",
+    "version": "1.0.9",
     "newArchEnabled": false,
     "orientation": "portrait",
     "icon": "./assets/images/productImages/EA-App-icon.png",
@@ -14,7 +14,7 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "buildNumber": "8",
+      "buildNumber": "9",
       "supportsTablet": true,
       "bundleIdentifier": "com.cmtBootCamp.AEPSampleAppNewArchEnabled",
       "googleServicesFile": "./GoogleService-Info.plist",
@@ -53,7 +53,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/productImages/EA-App-icon.png",
+          "icon": "./assets/images/notification-icon.png",
           "color": "#ffffff",
           "mode": "production"
         }
