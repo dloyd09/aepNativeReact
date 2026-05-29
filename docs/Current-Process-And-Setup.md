@@ -1,6 +1,6 @@
 # Current Process and Setup Guide
 
-This document captures the **development setup and run process** for the Native React Mobile App (Expo / Node), including steps that were originally on the [Adobe Wiki](https://wiki.corp.adobe.com/spaces/~dloyd/pages/3462410543/Native+React+Mobile+App+Expo+Node). For in-app configuration (App ID, Assurance, Push, etc.), see [README.md](../README.md). For QA use cases and fix plans, see [QA-Use-Cases-Review.md](QA-Use-Cases-Review.md) and [Fix-And-Test-Adjustment-Plan.md](Fix-And-Test-Adjustment-Plan.md).
+This document captures the **development setup and run process** for the Native React Mobile App (Expo / Node), including steps that were originally on the [Adobe Wiki](https://wiki.corp.adobe.com/spaces/~dloyd/pages/3462410543/Native+React+Mobile+App+Expo+Node). For in-app configuration (App ID, Assurance, Push, etc.), see [README.md](../README.md). For current validation status, see [Assurance-Validation-Report.md](Assurance-Validation-Report.md) and [Backlog-Status-Items2-10.md](Backlog-Status-Items2-10.md).
 
 ---
 
@@ -151,6 +151,46 @@ Do not re-add hardcoded env IDs in native code; follow [README.md](../README.md)
 
 ---
 
+## AEP dataset configuration
+
+### davidMobileInteractions (`6a10e771784875326a9c1dc9`)
+
+| Setting | Value |
+|---|---|
+| Sandbox | `training` |
+| Schema | `davidMobileInteractions` (Mobile Interactions v1.7) |
+| Partial ingestion | Enabled — 80% error threshold |
+| Error diagnostics | Enabled |
+
+**Partial ingestion** allows batches/streams with up to 80% bad records to land instead of failing the entire job. Error diagnostics enables the failed-record file download in the Monitoring UI.
+
+#### Why two places need to be set
+
+The app sends data via **streaming** (Edge Network → Adobe Data Collection). AEP exposes partial ingestion at two independent layers:
+
+| Layer | API | What it covers |
+|---|---|---|
+| Dataset (`acp_rejectLimit` tag) | Catalog Service | Batch ingestion jobs |
+| Dataflow (`partialIngestionPercentage`) | Flow Service | Streaming ingestion (our primary path) |
+
+Both were set to 80%. The UI dataflow view (`884f7519-e137-4799-8e46-b9e7bbdc9c8f`) reflects the Flow Service setting.
+
+#### Re-applying if reset
+
+Dataset (batch layer):
+```powershell
+node scripts/set-dataset-partial-ingestion.js --limit 80
+```
+
+Streaming dataflow (Flow Service) — run once, capturing the current etag first:
+```powershell
+node scripts/set-dataset-partial-ingestion.js --flow --limit 80
+```
+
+> `scripts/set-dataset-partial-ingestion.js` and `scripts/adobe-auth.js` handle auth via `AEP_CLIENT_ID`, `AEP_CLIENT_SECRET`, `AEP_SCOPES` in `.env`.
+
+---
+
 ## Optional: first-time repo / GitHub setup
 
 If you are creating a new repo from this app:
@@ -173,5 +213,5 @@ Adjust `origin` URL and branch name as needed.
 
 - [README.md](../README.md) – App setup (App ID, Assurance, Push), troubleshooting, XDM, building APK
 - [readme-PushTokens.md](../readme-PushTokens.md) – Push token lifecycle and mismatch fix
-- [QA-Use-Cases-Review.md](QA-Use-Cases-Review.md) – QA use cases (Call Center Push, Purchase Journey, Cart Views, Decisioning)
-- [Fix-And-Test-Adjustment-Plan.md](Fix-And-Test-Adjustment-Plan.md) – Fix plan, Windows toolchain, Android/iOS test paths
+- [Backlog-Status-Items2-10.md](Backlog-Status-Items2-10.md) – Current status of all backlog items with Assurance session evidence
+- [Assurance-Validation-Report.md](Assurance-Validation-Report.md) – Multi-session validation report; current app status and remaining gaps

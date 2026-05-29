@@ -11,7 +11,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Edge } from '@adobe/react-native-aepedge';
 import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { buildPageViewEvent } from '../../../src/utils/xdmEventBuilders';
-import { useProfileStorage } from '../../../hooks/useProfileStorage';
+import { useProfile } from '../../../components/ProfileContext';
 
 const PRODUCT_ICONS: { [key: string]: any } = {
   // Family
@@ -132,7 +132,7 @@ export default function CategoryProductList() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
 
-  const { profile, isProfileLoading } = useProfileStorage();
+  const { isProfileLoading, getProfile } = useProfile();
   const [identityMap, setIdentityMap] = useState({});
   const refreshIdentityMap = useCallback(async () => {
     try {
@@ -182,7 +182,7 @@ export default function CategoryProductList() {
         try {
           const pageViewEvent = await buildPageViewEvent({
             identityMap: currentIdentityMap,
-            profile,
+            profile: getProfile(),
             pageTitle: pageName,
             pagePath: `/home/${category}`,
             pageType: 'category',
@@ -200,7 +200,7 @@ export default function CategoryProductList() {
       };
 
       handleFocus().catch((err) => console.error('Category - Focus handler error:', err));
-    }, [category, products.length, refreshIdentityMap, isProfileLoading, profile])
+    }, [category, products.length, refreshIdentityMap, isProfileLoading])
   );
 
   const handleProductPress = (productName: string) => {

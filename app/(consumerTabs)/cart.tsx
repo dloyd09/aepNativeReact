@@ -11,8 +11,7 @@ import { PRODUCT_IMAGES } from './_home/[category]';
 import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from './_layout';
-import { useCartSession } from '../../hooks/useCartSession';
-import { useProfileStorage } from '../../hooks/useProfileStorage';
+import { useProfile } from '../../components/ProfileContext';
 import { buildPageViewEvent, buildCheckoutEvent, buildProductRemovalEvent, buildProductListOpenEvent } from '../../src/utils/xdmEventBuilders';
 import { isAdobeConfigured } from '../../src/utils/adobeConfig';
 
@@ -56,10 +55,10 @@ export default function CartTab() {
     },
   });
 
-  const { cart, incrementQuantity, decrementQuantity, removeFromCart, addToCart } = useCart();
-  const { cartSessionId, isLoading: isCartSessionLoading, productListOpenPending, clearProductListOpenPending } = useCartSession();
-  const { profile, setProfile: saveProfile, isProfileLoading } = useProfileStorage();
+  const { cart, incrementQuantity, decrementQuantity, removeFromCart, cartSessionId, isCartSessionLoading, productListOpenPending, markOpenSent } = useCart();
+  const { profile, isProfileLoading, getProfile } = useProfile();
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   // Memoize modifiedCart to prevent infinite re-renders in useFocusEffect
   const modifiedCart = useMemo(() => 
@@ -99,17 +98,21 @@ export default function CartTab() {
         try {
           const event = await buildProductListOpenEvent({
             identityMap,
-            profile,
+            profile: getProfile(),
             cartSessionId: productListOpenPending,
+            pageTitle: 'Shopping Cart',
+            pagePath: '/cart',
+            pageType: 'cart',
+            productListItems: modifiedCart,
           });
           await Edge.sendEvent(event);
-          await clearProductListOpenPending();
+          await markOpenSent();
         } catch (e) {
           console.error('Failed to send productListOpens:', e);
         }
       };
       send();
-    }, [productListOpenPending, identityMap, clearProductListOpenPending])
+    }, [productListOpenPending, identityMap, markOpenSent, profile, modifiedCart])
   );
 
   // Handle remove from cart with tracking
@@ -118,9 +121,12 @@ export default function CartTab() {
     try {
       const removalEvent = await buildProductRemovalEvent({
         identityMap,
-        profile,
+        profile: getProfile(),
         cartSessionId: cartSessionId || 'unknown',
-        productListItems: [item] // Only the item being removed
+        productListItems: [item], // Only the item being removed
+        pageTitle: 'Shopping Cart',
+        pagePath: '/cart',
+        pageType: 'cart',
       });
 
       console.log('📤 Sending product removal event');
@@ -151,8 +157,6 @@ export default function CartTab() {
           return;
         }
 
-        // Wait for the profile AsyncStorage read to complete before sending — avoids
-        // empty-identity XDM events on cold start while the hook is still loading.
         if (isProfileLoading) {
           console.log('Cart - Profile not yet loaded from storage, skipping page view');
           return;
@@ -162,12 +166,10 @@ export default function CartTab() {
         try {
           const pageViewEvent = await buildPageViewEvent({
             identityMap: currentIdentityMap,
-            profile,
+            profile: getProfile(),
             pageTitle: 'Shopping Cart',
             pagePath: '/cart',
             pageType: 'cart',
-            productListItems: modifiedCart,
-            cartSessionId
           });
 
           console.log('📤 Sending cart page view event');
@@ -178,7 +180,7 @@ export default function CartTab() {
             itemCount: modifiedCart.length,
             totalValue: modifiedCart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2),
             cartSessionId,
-            participantName: profile?.firstName || 'Guest User'
+            participantName: profile?.firstName || 'Prospect'
           });
         } catch (error) {
           console.error('❌ Error sending cart page view:', error);
@@ -186,7 +188,7 @@ export default function CartTab() {
       };
 
       handleFocus();
-    }, [modifiedCart, cartSessionId, isCartSessionLoading, refreshIdentityMap, isProfileLoading])
+    }, [modifiedCart, cartSessionId, isCartSessionLoading, refreshIdentityMap, isProfileLoading, profile])
   );
 
   return (
@@ -242,49 +244,55 @@ export default function CartTab() {
               opacity: isCheckingOut ? 0.6 : 1
             }} 
             onPress={async () => {
-              if (isCheckingOut) return; // Prevent double-clicks
-              setIsCheckingOut(true); // Show loading state
+              if (isCheckingOut) return;
+              setIsCheckingOut(true);
+              setCheckoutError(null);
 
               try {
                 if (!cartSessionId) {
-                  console.warn('Cart session not ready for checkout');
+                  console.warn('[Cart] Checkout blocked: cartSessionId missing. Cart session may still be loading.');
+                  setCheckoutError('Cart session not ready — tap again in a moment.');
                   setIsCheckingOut(false);
                   return;
                 }
 
-                if (!identityMap || Object.keys(identityMap).length === 0) {
-                  console.warn('IdentityMap not ready for checkout');
+                // Re-fetch identity right before the event — state may be stale if the
+                // SDK was not ready when this screen last focused or if login happened
+                // on another tab since the last focus.
+                const liveIdentityMap = await refreshIdentityMap();
+
+                if (!liveIdentityMap || Object.keys(liveIdentityMap).length === 0) {
+                  console.warn('[Cart] Checkout blocked: identityMap empty after live refresh. SDK may not be initialized — check App ID configuration.');
+                  setCheckoutError('Adobe SDK identity not ready. Verify your App ID is configured, then try again.');
                   setIsCheckingOut(false);
                   return;
                 }
 
+                const liveCheckoutProfile = getProfile();
                 const checkoutEvent = await buildCheckoutEvent({
-                  identityMap,
-                  profile,
+                  identityMap: liveIdentityMap,
+                  profile: liveCheckoutProfile,
                   cartSessionId,
                   productListItems: modifiedCart
                 });
 
-                console.log('📤 Sending checkout event (ExperienceEvent instance)');
-
+                console.log('📤 Sending checkout event');
                 await Edge.sendEvent(checkoutEvent);
-                console.log('✅ Checkout event sent successfully:', {
+                console.log('✅ Checkout event sent:', {
                   itemCount: modifiedCart.length,
                   totalValue: modifiedCart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2),
                   cartSessionId,
-                  hasECID: !!(identityMap as any)?.ECID?.[0]?.id,
-                  participantName: profile?.firstName || 'Guest User'
+                  hasECID: !!(liveIdentityMap as any)?.ECID?.[0]?.id,
+                  participantName: liveCheckoutProfile?.firstName || 'Prospect'
                 });
 
-                // Navigate only on success — students should see the checkout event
-                // in Assurance before proceeding. Never navigate on failure.
+                // Navigate only on success — never navigate if the event send threw.
                 navigation.navigate('Checkout');
               } catch (error) {
-                console.error('❌ Error sending checkout event:', error);
-                console.error('Event that failed:', JSON.stringify({identityMap, profile, cartSessionId}));
-                // Do not navigate — keep student on cart so they can retry.
+                console.error('[Cart] Checkout event failed:', error);
+                setCheckoutError('Checkout failed — see Metro console for details.');
               } finally {
-                setIsCheckingOut(false); // Reset loading state
+                setIsCheckingOut(false);
               }
             }}
             disabled={isCheckingOut}
@@ -293,6 +301,11 @@ export default function CartTab() {
               {isCheckingOut ? 'Processing...' : 'Checkout'}
             </ThemedText>
           </TouchableOpacity>
+          {checkoutError && (
+            <ThemedText style={{ color: 'red', marginTop: 8, textAlign: 'center', fontSize: 13 }}>
+              {checkoutError}
+            </ThemedText>
+          )}
         </>
       )}
       </ThemedView>

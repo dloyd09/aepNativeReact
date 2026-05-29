@@ -12,7 +12,7 @@ const mockSendEvent = jest.fn();
 const mockBuildPageViewEvent = jest.fn();
 const mockBuildLogoutEvent = jest.fn();
 const mockRemoveUserAttributes = jest.fn();
-const mockSetProfile = jest.fn();
+const mockSaveProfile = jest.fn();
 let mockStoredProfile = { firstName: 'Casey', email: 'casey@example.com' };
 
 let focusEffectCallback: undefined | (() => void);
@@ -88,14 +88,16 @@ jest.mock('@adobe/react-native-aepuserprofile', () => ({
   },
 }));
 
-jest.mock('../../../hooks/useProfileStorage', () => ({
-  useProfileStorage: () => ({
+jest.mock('../../../components/ProfileContext', () => ({
+  useProfile: () => ({
     profile: mockStoredProfile,
-    setProfile: (nextProfile: { firstName: string; email: string }) => {
+    saveProfile: async (nextProfile: { firstName: string; email: string }) => {
       mockStoredProfile = nextProfile;
-      return mockSetProfile(nextProfile);
+      return mockSaveProfile(nextProfile);
     },
+    isProfileLoading: false,
   }),
+  ProfileProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -144,18 +146,14 @@ describe('ProfileTab', () => {
     focusEffectCallback = undefined;
     mockStoredProfile = { firstName: 'Casey', email: 'casey@example.com' };
 
-    mockGetIdentities
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({
-        identityMap: {
-          ECID: [{ id: 'ecid-123' }],
-          Email: [{ id: 'casey@example.com' }],
-        },
-      });
+    mockGetIdentities.mockResolvedValue({
+      identityMap: {
+        ECID: [{ id: 'ecid-123' }],
+        Email: [{ id: 'casey@example.com' }],
+      },
+    });
 
-    mockGetExperienceCloudId
-      .mockResolvedValueOnce('')
-      .mockResolvedValueOnce('ecid-123');
+    mockGetExperienceCloudId.mockResolvedValue('ecid-123');
 
     mockBuildPageViewEvent.mockResolvedValue({ xdmData: { eventType: 'mobileApp.navigation.pageViews' } });
     mockBuildLogoutEvent.mockResolvedValue({ xdmData: { eventType: 'mobileApp.navigation.clicks' } });
@@ -173,8 +171,6 @@ describe('ProfileTab', () => {
     });
 
     expect(getRenderedText(tree)).toContain('Welcome, Casey!');
-    expect(getRenderedText(tree)).toContain('ECID: ');
-    expect(getRenderedText(tree)).toContain('Identity Map: {}');
 
     await act(async () => {
       focusEffectCallback?.();
@@ -213,7 +209,7 @@ describe('ProfileTab', () => {
       await flushPromises();
     });
 
-    const logoutButton = tree.root.findByProps({ title: 'Log Out' });
+    const logoutButton = tree.root.findByProps({ title: 'Clear Profile' });
 
     await act(async () => {
       logoutButton.props.onPress();
@@ -232,8 +228,8 @@ describe('ProfileTab', () => {
       expect.objectContaining({ id: 'casey@example.com' }),
       'Email'
     );
-    expect(mockSetProfile).toHaveBeenCalledWith({ firstName: '', email: '' });
-    expect(() => tree.root.findByProps({ title: 'Log Out' })).toThrow();
+    expect(mockSaveProfile).toHaveBeenCalledWith({ firstName: '', email: '' });
+    expect(() => tree.root.findByProps({ title: 'Clear Profile' })).toThrow();
     expect(getRenderedText(tree)).toContain('Profile');
   });
 });

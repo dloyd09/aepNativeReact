@@ -1,10 +1,24 @@
-import { Edge, ExperienceEvent } from '@adobe/react-native-aepedge';
-import { Messaging, MessagingEdgeEventType } from '@adobe/react-native-aepmessaging';
+import { Edge } from '@adobe/react-native-aepedge';
+import { Messaging } from '@adobe/react-native-aepmessaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
+import { safeParseJSON } from './safeParseJSON';
+import {
+  buildPropositionDisplayEvent,
+  buildPropositionInteractEvent,
+} from './xdmEventBuilders';
 
 export const DECISIONING_ITEMS_CONFIG_KEY = '@decisioning_items_config';
 export const DEFAULT_SURFACE = 'edge-offers';
 export const DEFAULT_PREVIEW_URL = 'com.cmtBootCamp.AEPSampleAppNewArchEnabled://decisioning-items';
+
+// Messaging.updatePropositionsForSurfaces is fire-and-forget (returns void). The
+// Edge response populates the in-memory cache that getPropositionsForSurfaces
+// reads from. 800ms covers a typical Edge round-trip on the bootcamp networks;
+// if the cache is empty after this wait we fall back to whatever
+// getPropositionsForSurfaces returns (usually a previous fetch's result).
+const PROPOSITION_REFRESH_SETTLE_MS = 800;
 
 export interface DecisioningItemsConfig {
   surface: string;
@@ -18,7 +32,9 @@ export interface DecisioningItem {
   itemID?: string;
   content: any;
   format?: string;
+  /** The Messaging proposition this item belongs to (carries scope + scopeDetails). */
   proposition: any;
+  /** The proposition item / offer; plain object from the Messaging bridge. */
   propositionItem: any;
   surface: string;
   trackingToken?: string;
@@ -80,15 +96,106 @@ export function parseDecisioningItemContent(item: DecisioningItem): ParsedDecisi
   };
 }
 
+// ============================================================================
+// SURFACE URI HELPER
+// ============================================================================
+
+/**
+ * Build the full AJO surface URI from a user-entered partial surface name.
+ *
+ * AJO surfaces are addressed as `mobileapp://<bundleId>/<surface>`. The
+ * Messaging extension accepts the partial name and prefixes the bundle
+ * identifier internally — this helper is retained for display, debug logs,
+ * and tests that need the resolved URI.
+ */
+export function buildSurfaceUri(surface: string): string {
+  const trimmed = (surface || '').trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('mobileapp://')) return trimmed;
+
+  const expoCfg: any = Constants.expoConfig;
+  const bundleId =
+    Platform.OS === 'ios'
+      ? expoCfg?.ios?.bundleIdentifier
+      : expoCfg?.android?.package;
+
+  if (!bundleId) {
+    // Last-resort fallback — bundle ID is present in app.json for this project.
+    return trimmed;
+  }
+  return `mobileapp://${bundleId}/${trimmed}`;
+}
+
+// ============================================================================
+// FETCH (Messaging — AJO Decisioning surface delivery)
+// ============================================================================
+
+async function readPropositionsForSurface(surface: string): Promise<any[]> {
+  const result = await Messaging.getPropositionsForSurfaces([surface]);
+  return normalizePropositionsResult(result);
+}
+
+/**
+ * Read currently-cached propositions for the surface. Does not hit the Edge.
+ * Returns [] if the surface has not been fetched yet this session.
+ */
+export async function getCachedPropositionsForSurface(
+  surface: string
+): Promise<any[]> {
+  if (!surface) return [];
+  try {
+    return await readPropositionsForSurface(surface);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Trigger an Edge fetch for the surface, wait for the cache to settle, then read.
+ *
+ * Messaging.updatePropositionsForSurfaces is fire-and-forget — there is no
+ * Promise to await for the Edge response. We sleep
+ * PROPOSITION_REFRESH_SETTLE_MS and then read from the in-memory cache via
+ * getPropositionsForSurfaces. On the bootcamp's network this is typically
+ * enough; on slower networks the first call may return a stale cache and the
+ * next refresh will catch up.
+ */
+export async function fetchPropositionsForSurface(
+  surface: string
+): Promise<any[]> {
+  if (!surface) return [];
+  Messaging.updatePropositionsForSurfaces([surface]);
+  await new Promise((resolve) => setTimeout(resolve, PROPOSITION_REFRESH_SETTLE_MS));
+  return readPropositionsForSurface(surface);
+}
+
+// ============================================================================
+// NORMALIZATION
+// ============================================================================
+
+/**
+ * Accept any of the proposition response shapes the SDK might hand us:
+ *   - Map<surface, proposition[]>  (legacy Optimize bridge)
+ *   - Record<surface, proposition[]>  (Messaging bridge)
+ *   - proposition[]  (already flattened by a caller)
+ * Returns a flat array of propositions across all surfaces.
+ *
+ * Kept as an exported helper so screens and tests can pass either shape.
+ */
 export function normalizePropositionsResult(propositionsResult: any): any[] {
-  if (Array.isArray(propositionsResult)) {
-    return propositionsResult;
+  if (!propositionsResult) return [];
+  if (Array.isArray(propositionsResult)) return propositionsResult;
+  if (typeof propositionsResult.forEach === 'function') {
+    const result: any[] = [];
+    propositionsResult.forEach((value: any) => {
+      if (Array.isArray(value)) result.push(...value);
+      else if (value) result.push(value);
+    });
+    return result;
   }
-
-  if (propositionsResult && typeof propositionsResult === 'object') {
-    return Object.values(propositionsResult).flat();
+  if (typeof propositionsResult === 'object') {
+    return Object.values(propositionsResult).flat() as any[];
   }
-
   return [];
 }
 
@@ -96,8 +203,10 @@ export function processDecisioningPropositions(propositions: any[]): Decisioning
   const items: DecisioningItem[] = [];
 
   propositions.forEach((proposition, propositionIndex) => {
-    proposition.items?.forEach((item: any, itemIndex: number) => {
-      const content = item.data?.content || item.data;
+    proposition.items?.forEach((offer: any, itemIndex: number) => {
+      // Offer's content is exposed via the `content` getter (returns data.content)
+      // on class instances, but plain-object propositions from tests use data.content directly.
+      const content = offer.data?.content ?? offer.content ?? offer.data;
       let parsedContent = content;
 
       if (typeof content === 'string') {
@@ -108,7 +217,7 @@ export function processDecisioningPropositions(propositions: any[]): Decisioning
         }
       }
 
-      if (item.schema === 'https://ns.adobe.com/personalization/json-content-item') {
+      if (offer.schema === 'https://ns.adobe.com/personalization/json-content-item') {
         let embeddedItems: any[] | null = null;
         if (parsedContent && Array.isArray(parsedContent.isJsonContent)) {
           embeddedItems = parsedContent.isJsonContent;
@@ -117,17 +226,17 @@ export function processDecisioningPropositions(propositions: any[]): Decisioning
         }
 
         if (embeddedItems?.length) {
-          embeddedItems.forEach((offer, offerIndex) => {
+          embeddedItems.forEach((subOffer, offerIndex) => {
             const stableFallbackId = `embedded-${propositionIndex}-${itemIndex}-${offerIndex}`;
             items.push({
-              id: offer.id || offer.itemID || stableFallbackId,
-              itemID: offer.itemID,
-              content: offer,
+              id: subOffer.id || subOffer.itemID || stableFallbackId,
+              itemID: subOffer.itemID,
+              content: subOffer,
               format: 'application/json',
               proposition,
-              propositionItem: item,
+              propositionItem: offer,
               surface: proposition.scope,
-              trackingToken: offer['data-item-token'] || offer.trackingToken,
+              trackingToken: subOffer['data-item-token'] || subOffer.trackingToken,
               isEmbeddedItem: true,
             });
           });
@@ -135,34 +244,34 @@ export function processDecisioningPropositions(propositions: any[]): Decisioning
         }
 
         items.push({
-          id: item.id || `json-${propositionIndex}-${itemIndex}`,
+          id: offer.id || `json-${propositionIndex}-${itemIndex}`,
           content: parsedContent,
           format: 'application/json',
           proposition,
-          propositionItem: item,
+          propositionItem: offer,
           surface: proposition.scope,
         });
         return;
       }
 
-      if (item.schema === 'https://ns.adobe.com/personalization/html-content-item') {
+      if (offer.schema === 'https://ns.adobe.com/personalization/html-content-item') {
         items.push({
-          id: item.id || `html-${propositionIndex}-${itemIndex}`,
+          id: offer.id || `html-${propositionIndex}-${itemIndex}`,
           content: parsedContent,
           format: 'text/html',
           proposition,
-          propositionItem: item,
+          propositionItem: offer,
           surface: proposition.scope,
         });
         return;
       }
 
       items.push({
-        id: item.id || `generic-${propositionIndex}-${itemIndex}`,
+        id: offer.id || `generic-${propositionIndex}-${itemIndex}`,
         content: parsedContent,
         format: 'unknown',
         proposition,
-        propositionItem: item,
+        propositionItem: offer,
         surface: proposition.scope,
       });
     });
@@ -175,104 +284,114 @@ export function buildDecisioningItemTrackingKey(item: DecisioningItem): string {
   return `${item.proposition?.id || item.surface}:${item.id}`;
 }
 
-export async function trackDecisioningItemDisplay(item: DecisioningItem): Promise<void> {
-  if (item.propositionItem && typeof item.propositionItem.track === 'function') {
-    if (item.trackingToken && item.isEmbeddedItem) {
-      item.propositionItem.track(null, MessagingEdgeEventType.DISPLAY, [item.trackingToken]);
-      return;
-    }
+// ============================================================================
+// TRACKING (Edge.sendEvent with synthesized decisioning XDM + custom-tenant envelope)
+// ============================================================================
 
-    item.propositionItem.track(null, MessagingEdgeEventType.DISPLAY);
-    return;
+/** Profile shape used by the XDM builders (kept loose to avoid a circular type dep). */
+type TrackingProfile = { firstName?: string; email?: string; phone?: string } | undefined;
+
+function propositionIdOf(proposition: any): string | undefined {
+  return proposition?.id ?? proposition?.uniqueId;
+}
+
+async function generateDisplayXdm(item: DecisioningItem): Promise<any> {
+  const offer = item.propositionItem as any;
+  if (offer && typeof offer.generateDisplayInteractionXdm === 'function') {
+    return offer.generateDisplayInteractionXdm(item.proposition);
   }
-
-  const xdmData: any = {
+  // Messaging propositions are plain objects (no generateXxxInteractionXdm).
+  // Synthesize the minimum partial XDM so the builder still emits a valid
+  // schema event.
+  return {
     eventType: 'decisioning.propositionDisplay',
     _experience: {
       decisioning: {
         propositions: [
           {
-            id: item.proposition.id,
-            scope: item.surface || item.proposition.scope,
-            scopeDetails: {
-              ...item.proposition.scopeDetails,
-            },
+            id: propositionIdOf(item.proposition),
+            scope: item.proposition?.scope,
+            scopeDetails: item.proposition?.scopeDetails,
+            items: [{ id: offer?.id }],
           },
         ],
       },
     },
   };
-
-  if (item.trackingToken && item.isEmbeddedItem) {
-    xdmData._experience.decisioning.propositions[0].items = [
-      {
-        id: item.propositionItem.id,
-        trackingToken: item.trackingToken,
-      },
-    ];
-  }
-
-  await Edge.sendEvent(new ExperienceEvent({ xdmData }));
 }
 
-export async function trackDecisioningItemInteraction(item: DecisioningItem, interaction: string): Promise<void> {
-  if (item.propositionItem && typeof item.propositionItem.track === 'function') {
-    if (item.trackingToken && item.isEmbeddedItem) {
-      item.propositionItem.track(interaction, MessagingEdgeEventType.INTERACT, [item.trackingToken]);
-      return;
-    }
-
-    item.propositionItem.track(interaction, MessagingEdgeEventType.INTERACT);
-    return;
+async function generateTapXdm(item: DecisioningItem): Promise<any> {
+  const offer = item.propositionItem as any;
+  if (offer && typeof offer.generateTapInteractionXdm === 'function') {
+    return offer.generateTapInteractionXdm(item.proposition);
   }
-
-  const xdmData: any = {
+  return {
     eventType: 'decisioning.propositionInteract',
     _experience: {
       decisioning: {
         propositions: [
           {
-            id: item.proposition.id,
-            scope: item.surface || item.proposition.scope,
-            scopeDetails: {
-              ...item.proposition.scopeDetails,
-            },
+            id: propositionIdOf(item.proposition),
+            scope: item.proposition?.scope,
+            scopeDetails: item.proposition?.scopeDetails,
+            items: [{ id: offer?.id }],
           },
         ],
       },
     },
   };
+}
 
-  if (item.trackingToken && item.isEmbeddedItem) {
-    xdmData._experience.decisioning.propositions[0].items = [
-      {
-        id: item.propositionItem.id,
-        trackingToken: item.trackingToken,
-      },
-    ];
-  }
+export async function trackDecisioningItemDisplay(
+  item: DecisioningItem,
+  identityMap: any,
+  profile?: TrackingProfile
+): Promise<void> {
+  const partialXdm = await generateDisplayXdm(item);
+  const event = await buildPropositionDisplayEvent({
+    generatedXdm: partialXdm,
+    identityMap,
+    profile,
+    embeddedItem:
+      item.trackingToken && item.isEmbeddedItem
+        ? { id: item.id, trackingToken: item.trackingToken }
+        : undefined,
+  });
+  await Edge.sendEvent(event);
+}
 
-  if (interaction) {
-    xdmData._experience.decisioning.propositionAction = {
-      label: interaction,
-    };
-  }
-
-  await Edge.sendEvent(new ExperienceEvent({ xdmData }));
+export async function trackDecisioningItemInteraction(
+  item: DecisioningItem,
+  interaction: string,
+  identityMap: any,
+  profile?: TrackingProfile
+): Promise<void> {
+  const partialXdm = await generateTapXdm(item);
+  const event = await buildPropositionInteractEvent({
+    generatedXdm: partialXdm,
+    identityMap,
+    profile,
+    interaction,
+    embeddedItem:
+      item.trackingToken && item.isEmbeddedItem
+        ? { id: item.id, trackingToken: item.trackingToken }
+        : undefined,
+  });
+  await Edge.sendEvent(event);
 }
 
 export async function refreshDecisioningSurfaceFromStoredConfig(): Promise<string | null> {
   const savedConfig = await AsyncStorage.getItem(DECISIONING_ITEMS_CONFIG_KEY);
+  const parsedConfig = safeParseJSON<DecisioningItemsConfig | null>(
+    savedConfig,
+    null,
+    'refreshDecisioningSurfaceFromStoredConfig'
+  );
 
-  if (!savedConfig) {
+  if (!parsedConfig?.surface) {
     return null;
   }
 
-  const parsedConfig = JSON.parse(savedConfig) as DecisioningItemsConfig;
-  if (!parsedConfig.surface) {
-    return null;
-  }
-
-  await Messaging.updatePropositionsForSurfaces([parsedConfig.surface]);
+  Messaging.updatePropositionsForSurfaces([parsedConfig.surface]);
   return parsedConfig.surface;
 }

@@ -5,7 +5,9 @@
  * 3. Verify all extensions are registered
  * 4. Set consent to "Yes" (default and collect)
  * 5. Configure messaging delegate for in-app messages
- * 6. Retry any push token that arrived before ECID was available
+ *
+ * Push token registration polls for ECID inline inside
+ * pushNotificationService.registerTokenWithAdobe — no init-time retry needed.
  *
  * IMPORTANT: Do not modify this sequence as it ensures proper initialization order
  * and prevents race conditions between MobileCore and extensions.
@@ -243,37 +245,6 @@ export const configureAdobe = async (appId: string) => {
       console.error('Error setting messaging delegate:', error);
     }
     
-    // Log in-app message response after initialization
-    try {
-      console.log('🔍 Checking for in-app messages...');
-      
-      // Trigger a refresh to see what comes back
-      await Messaging.refreshInAppMessages();
-      console.log('✅ In-app message refresh completed');
-      
-      // Wait a moment for messages to be processed
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Try to get any cached messages (this won't show much, but worth trying)
-      console.log('📬 Checking message cache...');
-      
-    } catch (error) {
-      console.log('⚠️ In-app message check completed with status:', error);
-      // Note: This might not be an error - could just mean no messages available
-    }
-    
-    // Retry any push token that was deferred because ECID was not yet available
-    // when the token arrived (common on first open before SDK finishes init).
-    // Dynamic require breaks the circular dependency:
-    //   pushNotifications.ts → adobeConfig.ts (getStoredAppId)
-    //   adobeConfig.ts → pushNotifications.ts (retryPendingPushToken)
-    try {
-      const { pushNotificationService } = require('./pushNotifications');
-      await pushNotificationService.retryPendingPushToken();
-    } catch (retryError) {
-      console.log('[Push] retryPendingPushToken skipped at configureAdobe time:', retryError);
-    }
-
     _initializedAppId = appId; // mark initialized only on full success (item 2.2)
     setAdobeReadiness('ready'); // signal screens that SDK + ECID are ready (item 2.1)
     console.log('Adobe SDK initialized successfully');

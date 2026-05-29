@@ -7,7 +7,15 @@
  *   (pageType 'cart', pagePath '/cart') so CJA can define "Cart Views" from this event.
  */
 
-import { buildPageViewEvent, buildPurchaseEvent } from '../xdmEventBuilders';
+import {
+  buildPageViewEvent,
+  buildPurchaseEvent,
+  buildCheckoutEvent,
+  buildProductListAddEvent,
+  buildProductViewEvent,
+  buildLoginEvent,
+  buildLogoutEvent,
+} from '../xdmEventBuilders';
 
 // Mock ExperienceEvent as a constructor that returns an object with xdmData (so we can assert on return value)
 jest.mock('@adobe/react-native-aepedge', () => ({
@@ -125,7 +133,7 @@ describe('xdmEventBuilders – QA use case automation', () => {
       expect(xdmData.environment).toBeDefined();
     });
 
-    it('buildPurchaseEvent includes web.webInteraction transactionType for engagement', async () => {
+    it('buildPurchaseEvent includes web.webInteraction transactionType Lower Funnel', async () => {
       const event = await buildPurchaseEvent({
         identityMap: baseIdentityMap,
         purchaseID: 'order-456',
@@ -136,7 +144,155 @@ describe('xdmEventBuilders – QA use case automation', () => {
       });
 
       const xdmData = event.xdmData;
-      expect(xdmData.web?.webInteraction?._adobecmteas?.engagement?.transactionType).toBe('purchase');
+      expect(xdmData.web?.webInteraction?._adobecmteas?.engagement?.transactionType).toBe('Lower Funnel');
     });
+  });
+});
+
+describe('xdmEventBuilders – canonical transactionType values (Task 1)', () => {
+  it('buildCheckoutEvent emits transactionType=Lower Funnel', async () => {
+    const { xdmData } = await buildCheckoutEvent({
+      identityMap: baseIdentityMap,
+      cartSessionId: 'c1',
+      productListItems: [],
+    });
+    expect(xdmData.web?.webInteraction?._adobecmteas?.engagement?.transactionType).toBe('Lower Funnel');
+  });
+
+  it('buildPurchaseEvent emits transactionType=Lower Funnel', async () => {
+    const { xdmData } = await buildPurchaseEvent({
+      identityMap: baseIdentityMap,
+      purchaseID: 'p1',
+      cartSessionId: 'c1',
+      productListItems: [],
+      priceTotal: 0,
+    });
+    expect(xdmData.web?.webInteraction?._adobecmteas?.engagement?.transactionType).toBe('Lower Funnel');
+  });
+
+  it('buildProductListAddEvent emits transactionType=Upper Funnel', async () => {
+    const { xdmData } = await buildProductListAddEvent({
+      identityMap: baseIdentityMap,
+      cartSessionId: 'c1',
+      product: { sku: 's1', name: 'P1', price: 10, category: 'cat' },
+    });
+    expect(xdmData.web?.webInteraction?._adobecmteas?.engagement?.transactionType).toBe('Upper Funnel');
+  });
+
+  it('buildProductViewEvent emits transactionType=Upper Funnel', async () => {
+    const { xdmData } = await buildProductViewEvent({
+      identityMap: baseIdentityMap,
+      product: { sku: 's1', name: 'P1', price: 10, category: 'cat' },
+    });
+    expect(xdmData.web?.webInteraction?._adobecmteas?.engagement?.transactionType).toBe('Upper Funnel');
+  });
+
+  it('buildLoginEvent emits transactionType=Authentication', async () => {
+    const { xdmData } = await buildLoginEvent({ identityMap: baseIdentityMap, success: true });
+    expect(xdmData.web?.webInteraction?._adobecmteas?.engagement?.transactionType).toBe('Authentication');
+  });
+
+  it('buildLoginEvent failure emits transactionType=Authentication', async () => {
+    const { xdmData } = await buildLoginEvent({ identityMap: baseIdentityMap, success: false });
+    expect(xdmData.web?.webInteraction?._adobecmteas?.engagement?.transactionType).toBe('Authentication');
+  });
+
+  it('buildLogoutEvent emits transactionType=Authentication', async () => {
+    const { xdmData } = await buildLogoutEvent({ identityMap: baseIdentityMap });
+    expect(xdmData.web?.webInteraction?._adobecmteas?.engagement?.transactionType).toBe('Authentication');
+  });
+
+  it('cart page view emits transactionType=Upper Funnel', async () => {
+    const { xdmData } = await buildPageViewEvent({
+      identityMap: baseIdentityMap,
+      pageTitle: 'Cart',
+      pagePath: '/cart',
+      pageType: 'cart',
+      cartSessionId: 'c1',
+      productListItems: [],
+    });
+    expect(xdmData.web?.webInteraction?._adobecmteas?.engagement?.transactionType).toBe('Upper Funnel');
+  });
+});
+
+describe('xdmEventBuilders – Prospect/not-logged-in values (Task 2)', () => {
+  // These builders all follow the generic unauthenticated pattern: Prospect / not-logged-in
+  const unauthBuilderCalls = [
+    () => buildPageViewEvent({ identityMap: baseIdentityMap, pageTitle: 'T', pagePath: '/t', pageType: 'home' }),
+    () => buildCheckoutEvent({ identityMap: baseIdentityMap, cartSessionId: 'c1', productListItems: [] }),
+    () => buildPurchaseEvent({ identityMap: baseIdentityMap, purchaseID: 'p1', cartSessionId: 'c1', productListItems: [], priceTotal: 0 }),
+    () => buildProductListAddEvent({ identityMap: baseIdentityMap, cartSessionId: 'c1', product: { sku: 's1', name: 'P1', price: 10, category: 'cat' } }),
+    () => buildProductViewEvent({ identityMap: baseIdentityMap, product: { sku: 's1', name: 'P1', price: 10, category: 'cat' } }),
+  ];
+
+  it.each(unauthBuilderCalls.map((fn, i) => [i, fn]))('builder %i emits Prospect/not-logged-in/prospect when unauthenticated', async (_i, fn) => {
+    const { xdmData } = await (fn as () => Promise<any>)();
+    expect(xdmData._adobecmteas.visitorDetails.visitorType).toBe('Prospect');
+    expect(xdmData._adobecmteas.authentication.loginStatus).toBe('not-logged-in');
+    expect(xdmData._adobecmteas.channelInfo.participantName).toBe('prospect');
+  });
+
+  // Login failure has its own loginStatus per plan §2.2
+  it('buildLoginEvent failure emits Prospect/login-failed', async () => {
+    const { xdmData } = await buildLoginEvent({ identityMap: baseIdentityMap, success: false });
+    expect(xdmData._adobecmteas.visitorDetails.visitorType).toBe('Prospect');
+    expect(xdmData._adobecmteas.authentication.loginStatus).toBe('login-failed');
+  });
+
+  // Logout has its own loginStatus per plan §2.2
+  it('buildLogoutEvent emits Prospect/logged-out', async () => {
+    const { xdmData } = await buildLogoutEvent({ identityMap: baseIdentityMap });
+    expect(xdmData._adobecmteas.visitorDetails.visitorType).toBe('Prospect');
+    expect(xdmData._adobecmteas.authentication.loginStatus).toBe('logged-out');
+  });
+
+  it('no builder emits the legacy value Guest', async () => {
+    const allCalls = [
+      ...unauthBuilderCalls,
+      () => buildLoginEvent({ identityMap: baseIdentityMap, success: false }),
+      () => buildLogoutEvent({ identityMap: baseIdentityMap }),
+    ];
+    for (const fn of allCalls) {
+      const { xdmData } = await fn();
+      expect(JSON.stringify(xdmData)).not.toContain('"Guest"');
+      expect(JSON.stringify(xdmData)).not.toContain('"guest"');
+      expect(JSON.stringify(xdmData)).not.toContain('guest user');
+    }
+  });
+});
+
+describe('xdmEventBuilders – productCategories (Task 3)', () => {
+  it('catalog product with secondaryCategory emits both primary and secondary categories', async () => {
+    const { xdmData } = await buildProductListAddEvent({
+      identityMap: baseIdentityMap,
+      cartSessionId: 'c1',
+      product: { sku: 'eqsusuchd', name: 'Chasing Tail Surfboard', price: 785, category: 'Equipment', secondaryCategory: 'Surfing' },
+    });
+    expect(xdmData.productListItems[0].productCategories).toEqual([
+      { categoryID: 'primaryCategory', categoryName: 'Equipment' },
+      { categoryID: 'secondaryCategory', categoryName: 'Surfing' },
+    ]);
+  });
+
+  it('product without secondaryCategory emits only primaryCategory', async () => {
+    const { xdmData } = await buildProductListAddEvent({
+      identityMap: baseIdentityMap,
+      cartSessionId: 'c1',
+      product: { sku: 'offer-1', name: 'Promo', price: 19.99, category: 'offers' },
+    });
+    expect(xdmData.productListItems[0].productCategories).toEqual([
+      { categoryID: 'primaryCategory', categoryName: 'offers' },
+    ]);
+  });
+
+  it('buildProductViewEvent emits productCategories', async () => {
+    const { xdmData } = await buildProductViewEvent({
+      identityMap: baseIdentityMap,
+      product: { sku: 's1', name: 'P1', price: 10, category: 'Equipment', secondaryCategory: 'Surfing' },
+    });
+    expect(xdmData.productListItems[0].productCategories).toEqual([
+      { categoryID: 'primaryCategory', categoryName: 'Equipment' },
+      { categoryID: 'secondaryCategory', categoryName: 'Surfing' },
+    ]);
   });
 });

@@ -1,0 +1,117 @@
+{
+  "uuid": "ff49cb0f-91d9-4187-a269-c35ec7e5e90d",
+  "sessionUuid": "d3b92cf1-4e25-4486-9a3d-3df29806852e",
+  "clientId": "df5294ba-a019-442b-8b16-8252460cee34",
+  "orgId": "0EB31D4D666C03940A495C4E@AdobeOrg",
+  "vendor": "com.adobe.streaming.validation",
+  "type": "generic",
+  "timestamp": 1779820379220,
+  "payload": {
+    "header": {
+      "msgType": "xdmEntityCreate",
+      "strictValidation": false,
+      "msgId": "1b104a8e-eefb-43b5-be99-d1ecb55fe5d1",
+      "source": {
+        "name": "EE-Konductor"
+      },
+      "sandboxName": "training",
+      "originalTimestamp": 1779820376.8233542,
+      "adobeAepValidationToken": "d3b92cf1-4e25-4486-9a3d-3df29806852e|df5294ba-a019-442b-8b16-8252460cee34",
+      "createdAt": 1779820377.0159094,
+      "schemaRef": {
+        "id": "https://ns.adobe.com/adobecmteas/schemas/adb09e8796405ce05b4f780a1116a6fedfa06a85c9a5c747",
+        "contentType": "application/vnd.adobe.xed-full+json;version=1"
+      },
+      "xactionId": "42f9749d-d11f-4944-b32c-2e4d0c6bfdc6-77082b73a1084472",
+      "_dcvsMeta": {
+        "processingTimestamp": 1779820379165
+      },
+      "datasetId": "6a10e771784875326a9c1dc9",
+      "sandboxId": "45126ff9-bc11-468d-926f-f9bc11d68db8",
+      "flowId": "884f7519-e137-4799-8e46-b9e7bbdc9c8f",
+      "imsOrgId": "0EB31D4D666C03940A495C4E@AdobeOrg",
+      "msgVersion": "2",
+      "outputTopics": "acp_data_error_dcs"
+    },
+    "body": {
+      "xdmMeta": {
+        "schemaRef": {
+          "id": "https://ns.adobe.com/adobecmteas/schemas/adb09e8796405ce05b4f780a1116a6fedfa06a85c9a5c747",
+          "contentType": "application/vnd.adobe.xed-full+json;version=1"
+        }
+      },
+      "xdmEntity": {
+        "environment": {},
+        "identityMap": {
+          "ECID": [
+            {
+              "id": "14498868301849097365989436633375170341",
+              "authenticatedState": "ambiguous",
+              "primary": true
+            }
+          ]
+        },
+        "eventType": "decisioning.propositionInteract",
+        "_id": "930a172c-199c-4e99-bafb-8b8e7333f7e2",
+        "_experience": {
+          "decisioning": {
+            "propositionAction": {
+              "label": "click"
+            },
+            "propositions": [
+              {
+                "scopeDetails": {
+                  "characteristics": {
+                    "eventToken": "eyJtZXNzYWdlRXhlY3V0aW9uIjp7Im1lc3NhZ2VFeGVjdXRpb25JRCI6IlVFOkluYm91bmQiLCJtZXNzYWdlSUQiOiIyZmIwMGQyNC02MDg4LTQ5OTMtODIwMC1lOGVhMmZhNDYxYjkiLCJtZXNzYWdlUHVibGljYXRpb25JRCI6IjA0NzcwYzczLTRlZTUtNDFjNS1iMTllLTAyY2Q4MTBhODM1YyIsIm1lc3NhZ2VUeXBlIjoibWFya2V0aW5nIiwiY2FtcGFpZ25JRCI6IjA4ODk0YmRkLTk0YTUtNDBmZC04N2Y1LTdjNWRiNGExNzJlZCIsImNhbXBhaWduVmVyc2lvbklEIjoiNDg1Zjc2MWItZjg0Mi00ZTMyLTg5ODAtY2ExY2ZjM2Q3ODc5IiwiY2FtcGFpZ25BY3Rpb25JRCI6ImYzYzQwNDFhLTYwNWEtNDAxMC1hNTc5LWFmZDZhZTQ2MzM3MCJ9LCJtZXNzYWdlUHJvZmlsZSI6eyJtZXNzYWdlUHJvZmlsZUlEIjoiMTZiMDgxZDctZDgzOS00M2Q3LWE2MWItZDUwMjQzYTI5OThlIiwiY2hhbm5lbCI6eyJfaWQiOiJodHRwczovL25zLmFkb2JlLmNvbS94ZG0vY2hhbm5lbHMvY29kZSIsIl90eXBlIjoiaHR0cHM6Ly9ucy5hZG9iZS5jb20veGRtL2NoYW5uZWwtdHlwZXMvY29kZSJ9fX0=",
+                    "subPropositions": "W3siaWQiOiI5M2IwZmE4MC0wMmQzLTQ4NzYtOTcyOC1mOGQwZDQzN2NjNjUiLCJzY29wZSI6Im1vYmlsZWFwcDovL2NvbS5jbXRCb290Q2FtcC5BRVBTYW1wbGVBcHBOZXdBcmNoRW5hYmxlZC9lZGdlLW9mZmVycyIsInNjb3BlRGV0YWlscyI6eyJkZWNpc2lvblByb3ZpZGVyIjoiRVhEIiwiY29ycmVsYXRpb25JRCI6IjA0NzcwYzczLTRlZTUtNDFjNS1iMTllLTAyY2Q4MTBhODM1Yy0wIiwic3RyYXRlZ2llcyI6W3sic3RyYXRlZ3lJRCI6IjkyMzVhYjE5LTAwNmMtNDZlZC05ZjdmLTA0Y2VjY2E1NzhlNyIsInN0ZXAiOiJkZWNpc2lvblBvbGljeSJ9LHsic3RyYXRlZ3lJRCI6Im1vYmlsZWFwcDovL2NvbS5jbXRCb290Q2FtcC5BRVBTYW1wbGVBcHBOZXdBcmNoRW5hYmxlZC9lZGdlLW9mZmVycyIsInN0ZXAiOiJwbGFjZW1lbnQifV0sInJhbmsiOjEsImFjdGl2aXR5Ijp7ImlkIjoiMDg4OTRiZGQtOTRhNS00MGZkLTg3ZjUtN2M1ZGI0YTE3MmVkI2YzYzQwNDFhLTYwNWEtNDAxMC1hNTc5LWFmZDZhZTQ2MzM3MCIsInByaW9yaXR5IjowLCJtYXRjaGVkU3VyZmFjZXMiOlsibW9iaWxlYXBwOi8vY29tLmNtdEJvb3RDYW1wLkFFUFNhbXBsZUFwcE5ld0FyY2hFbmFibGVkL2VkZ2Utb2ZmZXJzIiwibW9iaWxlYXBwOi8vY29tLmNtdEJvb3RDYW1wLkFFUFNhbXBsZUFwcE5ld0FyY2hFbmFibGVkL2VkZ2Utb2ZmZXJzIl19fSwiaXRlbXMiOlt7ImlkIjoiZHBzOmFhMmM1ZDVjZGQ5MWYzMmIzYTk4NWI2NDE4ZWI0NzVjODhlMmE4NDM0YjI1ZjIzNjoxYjgzMmQwMWQ3ZTY2ZmU4IiwiZXRhZyI6IjkiLCJuYW1lIjoid2VSZXdhcmRzIE1hc3RlcmNhcmQiLCJpdGVtU2VsZWN0aW9uIjp7InNlbGVjdGlvbkRldGFpbCI6eyJzZWxlY3Rpb25UeXBlIjoibWFudWFsIiwidmVyc2lvbiI6ImxhdGVzdCJ9fSwidG9rZW4iOiJXRS9XR0lXY0lGMTZUSmFUM2NENDl3In1dfV0="
+                  },
+                  "activity": {
+                    "matchedSurfaces": [
+                      "mobileapp://com.cmtBootCamp.AEPSampleAppNewArchEnabled/edge-offers",
+                      "mobileapp://com.cmtBootCamp.AEPSampleAppNewArchEnabled/edge-offers"
+                    ],
+                    "id": "08894bdd-94a5-40fd-87f5-7c5db4a172ed#f3c4041a-605a-4010-a579-afd6ae463370",
+                    "priority": 0
+                  },
+                  "rank": 1,
+                  "correlationID": "04770c73-4ee5-41c5-b19e-02cd810a835c-0",
+                  "decisionProvider": "AJO"
+                },
+                "scope": "mobileapp://com.cmtBootCamp.AEPSampleAppNewArchEnabled/edge-offers",
+                "id": "89ef468e-cb99-4914-84b8-3d1be8e73d03",
+                "items": [
+                  {
+                    "trackingToken": "WE/WGIWcIF16TJaT3cD49w",
+                    "id": "93b6d305-0aa7-41cc-b8f6-e003f04f89df"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "timestamp": "2026-05-26T18:32:56.959Z"
+      }
+    },
+    "_errors": {
+      "_streamingValidation": [
+        {
+          "path": "#",
+          "code": "DCVS-1106-400",
+          "message": "The message cannot be validated because a required property is missing: #: required key [_adobecmteas] not found.",
+          "errorType": 0
+        }
+      ]
+    }
+  },
+  "eventNumber": 0,
+  "validation": {
+    "not matched": {
+      "error": [
+        {
+          "message": "Some streaming errors were detected: The message cannot be validated because a required property is missing: #: required key [_adobecmteas] not found.",
+          "namespace": "edge-streaming-validation"
+        }
+      ]
+    }
+  }
+}

@@ -35,20 +35,18 @@ import { Edge } from '@adobe/react-native-aepedge';
 import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { useTheme, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useCart } from '../../../../components/CartContext';
-import { useCartSession } from '../../../../hooks/useCartSession';
 import { buildProductViewEvent, buildProductListAddEvent, buildPageViewEvent } from '../../../../src/utils/xdmEventBuilders';
-import { useProfileStorage } from '../../../../hooks/useProfileStorage';
+import { useProfile } from '../../../../components/ProfileContext';
 
 export default function ProductDetail() {
   const { category, product } = useLocalSearchParams<{ category: string; product: string }>();
   const router = useRouter();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { addToCart, isInCart } = useCart();
+  const { addToCart, isInCart, cartSessionId, isCartSessionLoading } = useCart();
   const navigation = useNavigation();
-  const { cartSessionId, isLoading: isCartSessionLoading } = useCartSession();
 
-  const { profile, isProfileLoading } = useProfileStorage();
+  const { profile, isProfileLoading, getProfile } = useProfile();
   const [identityMap, setIdentityMap] = useState({});
   const refreshIdentityMap = useCallback(async () => {
     try {
@@ -101,7 +99,7 @@ export default function ProductDetail() {
         try {
           const pageViewEvent = await buildPageViewEvent({
             identityMap: currentIdentityMap,
-            profile,
+            profile: getProfile(),
             pageTitle: productData.product.name,
             pagePath: `/home/${category}/${product}`,
             pageType: 'product',
@@ -126,13 +124,17 @@ export default function ProductDetail() {
         try {
           const productViewEvent = await buildProductViewEvent({
             identityMap: currentIdentityMap,
-            profile,
+            profile: getProfile(),
             product: {
               sku: productSku || '',
               name: productData.product.name,
               price: productData.product.price,
-              category: category
-            }
+              category: productData.product.categories.primary,
+              secondaryCategory: productData.product.categories.secondary
+            },
+            pageTitle: productData.product.name,
+            pagePath: `/home/${category}/${product}`,
+            pageType: 'product'
           });
 
           console.log('📤 Sending product view commerce event:', productData.product.name);
@@ -174,7 +176,8 @@ export default function ProductDetail() {
   const handleAddToCart = async () => {
     // Add to cart context
     addToCart({
-      category: category ?? '',
+      category: productData.product.categories.primary,
+      secondaryCategory: productData.product.categories.secondary,
       name: productData.product.name,
       title: productData.product.name,
       price: productData.product.price,
@@ -198,15 +201,19 @@ export default function ProductDetail() {
     try {
       const productListAddEvent = await buildProductListAddEvent({
         identityMap: currentIdentityMap,
-        profile,
+        profile: getProfile(),
         product: {
           sku: productSku || '',
           name: productData.product.name,
           price: productData.product.price,
-          category: category,
+          category: productData.product.categories.primary,
+          secondaryCategory: productData.product.categories.secondary,
           quantity: 1
         },
-        cartSessionId
+        cartSessionId,
+        pageTitle: productData.product.name,
+        pagePath: `/home/${category}/${product}`,
+        pageType: 'product'
       });
 
       console.log('📤 Sending add to cart event:', productData.product.name);

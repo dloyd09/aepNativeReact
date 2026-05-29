@@ -1,5 +1,8 @@
 # App Optimization Plan
-> Canonical source: `docs/App-Optimization-Plan.md`
+> ⚠️ **Stale snapshot — do not implement from this file.** This is a March 2026 copy preserved for skill-loading context. The canonical, current plan lives at **`docs/App-Optimization-Plan.md`** in the repo root and has diverged significantly (items 8.1, 8.2, 8.3 resolved 2026-05-22; ProfileContext migration; safeParseJSON util; other status changes).
+>
+> **Before implementing any item: read `docs/App-Optimization-Plan.md` first.** This snapshot will mislead about completion status, file paths, and recommended approach.
+>
 > Compiled 2026-03-25. Updated with full codebase audit 2026-03-26.
 > Context: WeRetail CMT Bootcamp — students configure their own Adobe Launch mobile tag property and generate data through the app into their own AEP instance.
 

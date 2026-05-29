@@ -12,7 +12,7 @@ This doc aligns with Adobe’s Commerce data type and CJA/reporting. It lists wh
 | **commerce.purchases.value** | “Pay Now” on Checkout | `buildPurchaseEvent`. |
 | **commerce.productListAdds.value** | Add to cart (product detail, offers, decisioning) | `buildProductListAddEvent`. |
 | **commerce.productListRemovals.value** | Remove from cart | `buildProductRemovalEvent`. |
-| **commerce.productListUpdates.value** | Quantity increase | `buildProductInteractionEvent`. |
+| **productListItems[].productCategories[]** | Every productListItems entry | Two entries for catalog products (primaryCategory + secondaryCategory); one entry for AJO offers/decisioning items (primaryCategory only). |
 | **commerce.productViews.value** | Product detail page | `buildProductViewEvent`. |
 
 We also send on **purchase**:
@@ -41,5 +41,4 @@ Checkout computes subtotal from the cart, demo tax (8.25% of subtotal), demo shi
 ## References
 
 - [Adobe Commerce data type](https://experienceleague.adobe.com/docs/experience-platform/xdm/data-types/commerce.html)
-- [QA-Use-Cases-Review.md](QA-Use-Cases-Review.md) – Cart Views, Purchase, etc.
 - [Automated-Checks-For-QA-Use-Cases.md](Automated-Checks-For-QA-Use-Cases.md) – What’s covered by tests

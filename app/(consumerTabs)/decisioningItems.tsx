@@ -2,16 +2,15 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, Image, StyleSheet, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Messaging } from '@adobe/react-native-aepmessaging';
 import { Edge } from '@adobe/react-native-aepedge';
 import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useTheme, useFocusEffect } from '@react-navigation/native';
 import { useCart } from '@/components/CartContext';
-import { useCartSession } from '@/hooks/useCartSession';
-import { useProfileStorage } from '@/hooks/useProfileStorage';
+import { useProfile } from '@/components/ProfileContext';
 import { buildPageViewEvent, buildProductListAddEvent } from '@/src/utils/xdmEventBuilders';
+import { safeParseJSON } from '@/src/utils/safeParseJSON';
 import { useRouter } from 'expo-router';
 import {
   DECISIONING_ITEMS_CONFIG_KEY,
@@ -20,7 +19,8 @@ import {
   DecisioningItem,
   DecisioningItemsConfig,
   buildDecisioningItemTrackingKey,
-  normalizePropositionsResult,
+  fetchPropositionsForSurface,
+  getCachedPropositionsForSurface,
   parseDecisioningItemContent,
   processDecisioningPropositions,
   trackDecisioningItemDisplay,
@@ -112,9 +112,8 @@ const DecisioningItemCard = ({
 export default function DecisioningItemsTab() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { addToCart, isInCart } = useCart();
-  const { cartSessionId, isLoading: isCartSessionLoading } = useCartSession();
-  const { profile, isProfileLoading } = useProfileStorage();
+  const { addToCart, isInCart, cartSessionId, isCartSessionLoading } = useCart();
+  const { profile, isProfileLoading, getProfile } = useProfile();
   const router = useRouter();
   const [config, setConfig] = useState<DecisioningItemsConfig | null>(null);
   const [items, setItems] = useState<DecisioningItem[]>([]);
@@ -124,6 +123,8 @@ export default function DecisioningItemsTab() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isFromCache, setIsFromCache] = useState(false);
   const [identityMap, setIdentityMap] = useState({});
+  const identityMapRef = useRef<any>({});
+  const profileRef = useRef<any>(undefined);
   const displayedItemKeysRef = useRef(new Set<string>());
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 });
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: Array<{ item: DecisioningItem; isViewable?: boolean }> }) => {
@@ -138,11 +139,19 @@ export default function DecisioningItemsTab() {
       }
 
       displayedItemKeysRef.current.add(trackingKey);
-      trackDecisioningItemDisplay(item).catch((trackingError) => {
+      trackDecisioningItemDisplay(item, identityMapRef.current, profileRef.current).catch((trackingError) => {
         console.error('DecisioningItems: Error tracking visible item:', trackingError);
       });
     });
   });
+
+  useEffect(() => {
+    identityMapRef.current = identityMap;
+  }, [identityMap]);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
 
   const styles = StyleSheet.create({
     card: {
@@ -285,9 +294,8 @@ export default function DecisioningItemsTab() {
 
   const getCachedDecisioningItems = useCallback(async (configuration: DecisioningItemsConfig) => {
     try {
-      const propositionsResult = await Messaging.getPropositionsForSurfaces([configuration.surface]);
-      const propositionsArray = normalizePropositionsResult(propositionsResult);
-      const extractedItems = processDecisioningPropositions(propositionsArray);
+      const propositions = await getCachedPropositionsForSurface(configuration.surface);
+      const extractedItems = processDecisioningPropositions(propositions);
       if (extractedItems.length > 0) {
         displayedItemKeysRef.current.clear();
         setItems(extractedItems);
@@ -305,10 +313,8 @@ export default function DecisioningItemsTab() {
 
   const fetchDecisioningItemsFromServer = useCallback(async (configuration: DecisioningItemsConfig) => {
     try {
-      await Messaging.updatePropositionsForSurfaces([configuration.surface]);
-      const propositionsResult = await Messaging.getPropositionsForSurfaces([configuration.surface]);
-      const propositionsArray = normalizePropositionsResult(propositionsResult);
-      const extractedItems = processDecisioningPropositions(propositionsArray);
+      const propositions = await fetchPropositionsForSurface(configuration.surface);
+      const extractedItems = processDecisioningPropositions(propositions);
       displayedItemKeysRef.current.clear();
       setItems(extractedItems);
       setLastUpdated(new Date());
@@ -355,7 +361,15 @@ export default function DecisioningItemsTab() {
         savedConfig = JSON.stringify(defaultConfig);
       }
 
-      const parsedConfig = JSON.parse(savedConfig) as DecisioningItemsConfig;
+      const parsedConfig = safeParseJSON<DecisioningItemsConfig | null>(
+        savedConfig,
+        null,
+        'DecisioningItems.loadConfig'
+      );
+      if (!parsedConfig) {
+        setError('Stored decisioning config is corrupted — clear app data and reconfigure');
+        return;
+      }
       setConfig(parsedConfig);
 
       if (!parsedConfig.surface) {
@@ -393,7 +407,7 @@ export default function DecisioningItemsTab() {
         try {
           const pageViewEvent = await buildPageViewEvent({
             identityMap: currentIdentityMap,
-            profile,
+            profile: getProfile(),
             pageTitle: 'Decisioning Items',
             pagePath: '/decisioning-items',
             pageType: 'decisioning',
@@ -412,7 +426,7 @@ export default function DecisioningItemsTab() {
   const handleAddToCart = async (item: DecisioningItem) => {
     const content = parseDecisioningItemContent(item);
     try {
-      await trackDecisioningItemInteraction(item, 'click');
+      await trackDecisioningItemInteraction(item, 'click', identityMapRef.current, profileRef.current);
     } catch (trackError) {
       console.error('[DecisioningItems] Failed to track interaction:', trackError);
     }
@@ -440,7 +454,7 @@ export default function DecisioningItemsTab() {
     try {
       const productListAddEvent = await buildProductListAddEvent({
         identityMap: currentIdentityMap,
-        profile,
+        profile: getProfile(),
         product: {
           sku: item.id,
           name: content.title || 'Unnamed Offer',
@@ -449,6 +463,9 @@ export default function DecisioningItemsTab() {
           quantity: 1,
         },
         cartSessionId,
+        pageTitle: 'Decisioning Items',
+        pagePath: '/decisioning-items',
+        pageType: 'decisioning',
       });
 
       await Edge.sendEvent(productListAddEvent);
@@ -458,7 +475,7 @@ export default function DecisioningItemsTab() {
   };
 
   const handleCustomCTA = async (item: DecisioningItem, url: string) => {
-    await trackDecisioningItemInteraction(item, 'click');
+    await trackDecisioningItemInteraction(item, 'click', identityMapRef.current, profileRef.current);
 
     try {
       if (url.startsWith('myapp://') || url.startsWith('com.cmtBootCamp.AEPSampleAppNewArchEnabled://')) {

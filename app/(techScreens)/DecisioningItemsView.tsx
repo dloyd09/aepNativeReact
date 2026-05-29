@@ -7,6 +7,8 @@ import { ThemedText } from '@/components/ThemedText';
 import { TechnicalScreen } from '@/components/TechnicalScreen';
 import { ThemedView } from '@/components/ThemedView';
 import { useThemeColor } from '@/hooks/useThemeColor';
+import { safeParseJSON } from '@/src/utils/safeParseJSON';
+import { fetchPropositionsForSurface } from '@/src/utils/decisioningItems';
 import styles from '../../styles/styles';
 
 const DECISIONING_ITEMS_CONFIG_KEY = '@decisioning_items_config';
@@ -39,9 +41,13 @@ export default function DecisioningItemsView() {
         const savedConfig = await AsyncStorage.getItem(DECISIONING_ITEMS_CONFIG_KEY);
 
         if (savedConfig) {
-          const parsedConfig = JSON.parse(savedConfig);
+          const parsedConfig = safeParseJSON<{ surface?: string } | null>(
+            savedConfig,
+            null,
+            'DecisioningItemsView.loadConfig'
+          );
           setConfig({
-            surface: parsedConfig.surface || DEFAULT_SURFACE,
+            surface: parsedConfig?.surface || DEFAULT_SURFACE,
             previewUrl: PREVIEW_URL,
           });
         } else {
@@ -73,20 +79,12 @@ export default function DecisioningItemsView() {
       setIsTesting(true);
       setTestResult('');
 
-      await Messaging.updatePropositionsForSurfaces([surface]);
-      const propositionsResult = await Messaging.getPropositionsForSurfaces([surface]);
+      const propositionsArray = await fetchPropositionsForSurface(surface);
       await AsyncStorage.setItem(
         DECISIONING_ITEMS_CONFIG_KEY,
         JSON.stringify({ surface, previewUrl: PREVIEW_URL })
       );
       setConfig(prev => ({ ...prev, surface }));
-
-      let propositionsArray: any[] = [];
-      if (Array.isArray(propositionsResult)) {
-        propositionsArray = propositionsResult;
-      } else if (propositionsResult && typeof propositionsResult === 'object') {
-        propositionsArray = Object.values(propositionsResult).flat();
-      }
 
       const resultSummary = {
         status: 'SUCCESS',

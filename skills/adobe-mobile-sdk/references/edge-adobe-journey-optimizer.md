@@ -6,12 +6,13 @@
 
 ## What it is
 
-The AJO Messaging extension enables two key mobile engagement channels delivered through Adobe Journey Optimizer:
+The AJO Messaging extension covers three mobile engagement channels delivered through Adobe Journey Optimizer:
 
 - **In-App Messaging (IAM)** — modal, banner, or fullscreen messages triggered by SDK events or Journey Optimizer campaigns
 - **Push Notifications** — rich push notifications tracked and managed through AJO
+- **Surface-based propositions** — Code-Based Experiences (CBE) and items delivered by the new AJO **Decisioning** framework (Catalogs / Strategy setup / Decision Items). See `edge-optimize.md` for the full proposition delivery guide; that doc is the source of truth for `updatePropositionsForSurfaces` / `getPropositionsForSurfaces`.
 
-Both channels are routed through the Edge Network and require the Edge and Identity extensions to be registered.
+All three channels are routed through the Edge Network and require the Edge and Identity extensions to be registered.
 
 ---
 

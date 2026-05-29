@@ -1,5 +1,3 @@
-import { Proposition } from '@adobe/react-native-aepoptimize';
-
 export interface ConsumerOffer {
   id: string;
   title: string;
@@ -9,7 +7,11 @@ export interface ConsumerOffer {
   name: string;
   category: string;
   sku: string;
-  proposition: Proposition;
+  /** Surface name the proposition was fetched for. Used in tracking. */
+  surface: string;
+  /** Raw proposition object from the Messaging bridge (id/uniqueId, scope, scopeDetails). */
+  proposition: any;
+  /** Raw proposition item / offer object from the Messaging bridge. */
   rawOffer: any;
 }
 
@@ -18,7 +20,7 @@ export function parseOfferContent(content: unknown): Record<string, any> {
     try {
       return JSON.parse(content);
     } catch (error) {
-      console.error('Error parsing Optimize offer content:', error);
+      console.error('Error parsing proposition item content:', error);
       return {};
     }
   }
@@ -30,65 +32,46 @@ export function parseOfferContent(content: unknown): Record<string, any> {
   return {};
 }
 
-export function mapOptimizePropositionToOffers(proposition?: Proposition | null): ConsumerOffer[] {
-  if (!proposition?.items?.length) {
-    return [];
-  }
+function mapItemToOffer(
+  item: any,
+  proposition: any,
+  surface: string,
+  index: number
+): ConsumerOffer {
+  const parsedContent = parseOfferContent(item?.data?.content ?? item?.content);
+  const rawPrice = parsedContent.price;
+  const price = typeof rawPrice === 'number' ? rawPrice : Number(rawPrice ?? 0);
 
-  return proposition.items.map((item: any, index: number) => {
-    const parsedContent = parseOfferContent(item.data?.content ?? item.content);
-    const rawPrice = parsedContent.price;
-    const price = typeof rawPrice === 'number' ? rawPrice : Number(rawPrice ?? 0);
-
-    return {
-      id: item.id || parsedContent.id || parsedContent.sku || `offer-${index}`,
-      title: parsedContent.name || parsedContent.title || 'No Title',
-      text: parsedContent.text || parsedContent.description || 'No Text',
-      image: typeof parsedContent.image === 'string' ? parsedContent.image.trim() : '',
-      price: Number.isFinite(price) ? price : 0,
-      name: parsedContent.name || parsedContent.title || 'Unnamed Offer',
-      category: parsedContent.category || 'defaultCategory',
-      sku: parsedContent.sku || item.id || 'defaultSku',
-      proposition,
-      rawOffer: item,
-    };
-  });
-}
-
-export function getOffersForScope(
-  propositions: Map<string, Proposition> | undefined,
-  scopeName: string
-): ConsumerOffer[] {
-  if (!propositions || !scopeName) {
-    return [];
-  }
-
-  return mapOptimizePropositionToOffers(propositions.get(scopeName));
-}
-
-export function createOptimizePropositionUpdateHandler(
-  scopeRef: { current: string },
-  setOffers: (offers: ConsumerOffer[]) => void
-) {
-  return (propositions?: Map<string, Proposition>) => {
-    const scopeName = scopeRef.current;
-
-    if (!propositions || !scopeName) {
-      setOffers([]);
-      return;
-    }
-
-    setOffers(getOffersForScope(propositions, scopeName));
+  return {
+    id: item?.id || parsedContent.id || parsedContent.sku || `offer-${index}`,
+    title: parsedContent.name || parsedContent.title || 'No Title',
+    text: parsedContent.text || parsedContent.description || 'No Text',
+    image: typeof parsedContent.image === 'string' ? parsedContent.image.trim() : '',
+    price: Number.isFinite(price) ? price : 0,
+    name: parsedContent.name || parsedContent.title || 'Unnamed Offer',
+    category: parsedContent.category || 'defaultCategory',
+    sku: parsedContent.sku || item?.id || 'defaultSku',
+    surface,
+    proposition,
+    rawOffer: item,
   };
 }
 
-export function buildOptimizeRequestXdm(ecid: string): Map<string, any> {
-  const xdm = new Map<string, any>();
-  xdm.set('eventType', 'personalization.request');
-  xdm.set('identityMap', {
-    ECID: [{ id: ecid, primary: true }],
-  });
-  return xdm;
+/**
+ * Flatten the array of propositions returned by
+ * `normalizePropositionsResult(Messaging.getPropositionsForSurfaces(...))`
+ * into a list of `ConsumerOffer`s ready for FlatList rendering.
+ */
+export function mapPropositionsToOffers(
+  propositions: any[] | null | undefined,
+  surface: string
+): ConsumerOffer[] {
+  if (!propositions?.length) return [];
+  return propositions.flatMap((proposition) =>
+    (proposition?.items ?? []).map((item: any, idx: number) =>
+      mapItemToOffer(item, proposition, surface, idx)
+    )
+  );
 }
 
 export function isValidOfferImage(image: string | null | undefined): boolean {
@@ -96,17 +79,7 @@ export function isValidOfferImage(image: string | null | undefined): boolean {
 }
 
 export function buildOfferTrackingKey(offer: ConsumerOffer): string {
-  return `${offer.proposition.id}:${offer.id}`;
-}
-
-export function trackOfferDisplay(offer: ConsumerOffer): void {
-  if (offer.rawOffer && typeof offer.rawOffer.displayed === 'function') {
-    offer.rawOffer.displayed(offer.proposition);
-  }
-}
-
-export function trackOfferTap(offer: ConsumerOffer): void {
-  if (offer.rawOffer && typeof offer.rawOffer.tapped === 'function') {
-    offer.rawOffer.tapped(offer.proposition);
-  }
+  const propId =
+    offer.proposition?.id ?? offer.proposition?.uniqueId ?? offer.surface;
+  return `${propId}:${offer.id}`;
 }

@@ -3,6 +3,7 @@ import { Edge, ExperienceEvent } from '@adobe/react-native-aepedge';
 import { Messaging } from '@adobe/react-native-aepmessaging';
 import {
   buildDecisioningItemTrackingKey,
+  buildSurfaceUri,
   normalizePropositionsResult,
   parseDecisioningItemContent,
   processDecisioningPropositions,
@@ -15,13 +16,20 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   getItem: jest.fn(),
 }));
 
+jest.mock('expo-constants', () => ({
+  __esModule: true,
+  default: {
+    expoConfig: {
+      ios: { bundleIdentifier: 'com.cmtBootCamp.AEPSampleAppNewArchEnabled' },
+      android: { package: 'com.cmtBootCamp.AEPSampleAppNewArchEnabled' },
+    },
+  },
+}));
+
 jest.mock('@adobe/react-native-aepmessaging', () => ({
   Messaging: {
     updatePropositionsForSurfaces: jest.fn(),
-  },
-  MessagingEdgeEventType: {
-    DISPLAY: 'display',
-    INTERACT: 'interact',
+    getPropositionsForSurfaces: jest.fn(() => Promise.resolve({})),
   },
 }));
 
@@ -51,8 +59,8 @@ describe('Decisioning Items flow contract', () => {
         price: '12.50',
         category: 'promo',
       }),
-      proposition: {},
-      propositionItem: {},
+      proposition: {} as any,
+      propositionItem: {} as any,
       surface: 'edge-offers',
     });
 
@@ -111,61 +119,119 @@ describe('Decisioning Items flow contract', () => {
   });
 
   it('normalizes proposition responses and builds stable tracking keys', () => {
-    const normalized = normalizePropositionsResult({
-      'edge-offers': [{ id: 'prop-1' }],
-    });
+    const arrayInput = [{ id: 'prop-1' } as any];
+    expect(normalizePropositionsResult(arrayInput)).toEqual([{ id: 'prop-1' }]);
 
-    expect(normalized).toEqual([{ id: 'prop-1' }]);
+    const mapInput = new Map<string, any>([['edge-offers', { id: 'prop-1' }]]);
+    expect(normalizePropositionsResult(mapInput)).toEqual([{ id: 'prop-1' }]);
+
     expect(buildDecisioningItemTrackingKey({
       id: 'item-1',
       content: {},
-      proposition: { id: 'prop-1' },
-      propositionItem: {},
+      proposition: { id: 'prop-1' } as any,
+      propositionItem: {} as any,
       surface: 'edge-offers',
     })).toBe('prop-1:item-1');
   });
 
-  it('tracks display and interaction with native proposition item methods when available', async () => {
-    const track = jest.fn();
-    const item = {
-      id: 'item-1',
-      content: { name: 'Offer A' },
-      proposition: { id: 'prop-1', scope: 'edge-offers', scopeDetails: {} },
-      propositionItem: { id: 'parent', track },
-      surface: 'edge-offers',
-      trackingToken: 'token-a',
-      isEmbeddedItem: true,
-    };
-
-    await trackDecisioningItemDisplay(item as any);
-    await trackDecisioningItemInteraction(item as any, 'click');
-
-    expect(track).toHaveBeenNthCalledWith(1, null, 'display', ['token-a']);
-    expect(track).toHaveBeenNthCalledWith(2, 'click', 'interact', ['token-a']);
+  it('expands a partial surface name to the full mobileapp:// URI', () => {
+    expect(buildSurfaceUri('edge-offers')).toBe(
+      'mobileapp://com.cmtBootCamp.AEPSampleAppNewArchEnabled/edge-offers'
+    );
+    expect(buildSurfaceUri('mobileapp://other/already-full')).toBe(
+      'mobileapp://other/already-full'
+    );
   });
 
-  it('falls back to Edge interaction events when native track is unavailable', async () => {
+  it('sends display + interact events through Edge with the custom tenant envelope', async () => {
+    const generateDisplayInteractionXdm = jest.fn(() =>
+      Promise.resolve({
+        eventType: 'decisioning.propositionDisplay',
+        _experience: {
+          decisioning: {
+            propositions: [
+              { id: 'prop-1', scope: 'edge-offers', scopeDetails: { foo: 'bar' }, items: [{ id: 'offer-1' }] },
+            ],
+          },
+        },
+      })
+    );
+    const generateTapInteractionXdm = jest.fn(() =>
+      Promise.resolve({
+        eventType: 'decisioning.propositionInteract',
+        _experience: {
+          decisioning: {
+            propositions: [
+              { id: 'prop-1', scope: 'edge-offers', scopeDetails: { foo: 'bar' }, items: [{ id: 'offer-1' }] },
+            ],
+          },
+        },
+      })
+    );
+
     const item = {
       id: 'item-1',
       content: { name: 'Offer A' },
-      proposition: { id: 'prop-1', scope: 'edge-offers', scopeDetails: { foo: 'bar' } },
-      propositionItem: { id: 'parent' },
+      proposition: { id: 'prop-1', scope: 'edge-offers', scopeDetails: { foo: 'bar' } } as any,
+      propositionItem: {
+        id: 'offer-1',
+        generateDisplayInteractionXdm,
+        generateTapInteractionXdm,
+      } as any,
       surface: 'edge-offers',
       trackingToken: 'token-a',
       isEmbeddedItem: true,
     };
 
-    await trackDecisioningItemDisplay(item as any);
-    await trackDecisioningItemInteraction(item as any, 'click');
+    const identityMap = { ECID: [{ id: 'ecid-123', authenticatedState: 'ambiguous', primary: true }] };
+    const profile = { firstName: 'Alex', email: 'alex@example.com' };
 
+    await trackDecisioningItemDisplay(item, identityMap, profile);
+    await trackDecisioningItemInteraction(item, 'click', identityMap, profile);
+
+    expect(generateDisplayInteractionXdm).toHaveBeenCalledWith(item.proposition);
+    expect(generateTapInteractionXdm).toHaveBeenCalledWith(item.proposition);
     expect(Edge.sendEvent).toHaveBeenCalledTimes(2);
-    expect((Edge.sendEvent as jest.Mock).mock.calls[0][0]).toEqual(
-      new (ExperienceEvent as any)({
-        xdmData: expect.objectContaining({
-          eventType: 'decisioning.propositionDisplay',
-        }),
-      })
-    );
+
+    const [displayCall, interactCall] = (Edge.sendEvent as jest.Mock).mock.calls;
+
+    expect(displayCall[0].xdmData).toMatchObject({
+      eventType: 'decisioning.propositionDisplay',
+      identityMap,
+      _adobecmteas: expect.objectContaining({
+        identities: expect.objectContaining({ ecid: 'ecid-123' }),
+        authentication: expect.objectContaining({ loginStatus: 'logged-in' }),
+        visitorDetails: expect.objectContaining({ visitorType: 'Customer' }),
+      }),
+    });
+
+    expect(interactCall[0].xdmData._experience.decisioning.propositionAction).toEqual({
+      label: 'click',
+    });
+    expect(interactCall[0].xdmData._experience.decisioning.propositions[0].items).toEqual([
+      { id: 'item-1', trackingToken: 'token-a' },
+    ]);
+    expect(interactCall[0].xdmData._adobecmteas.identities.ecid).toBe('ecid-123');
+  });
+
+  it('synthesizes a partial XDM when the proposition item has no generateXxxInteractionXdm', async () => {
+    const item = {
+      id: 'item-1',
+      content: { name: 'Offer A' },
+      proposition: { id: 'prop-1', scope: 'edge-offers', scopeDetails: { foo: 'bar' } } as any,
+      propositionItem: { id: 'offer-1' } as any,
+      surface: 'edge-offers',
+    };
+
+    const identityMap = { ECID: [{ id: 'ecid-456' }] };
+
+    await trackDecisioningItemDisplay(item, identityMap);
+
+    expect(Edge.sendEvent).toHaveBeenCalledTimes(1);
+    const sent = (Edge.sendEvent as jest.Mock).mock.calls[0][0].xdmData;
+    expect(sent.eventType).toBe('decisioning.propositionDisplay');
+    expect(sent._adobecmteas.identities.ecid).toBe('ecid-456');
+    expect(sent._experience.decisioning.propositions[0].id).toBe('prop-1');
   });
 
   it('refreshes the configured decisioning surface from stored config', async () => {
@@ -177,6 +243,7 @@ describe('Decisioning Items flow contract', () => {
     const refreshedSurface = await refreshDecisioningSurfaceFromStoredConfig();
 
     expect(refreshedSurface).toBe('edge-offers');
+    expect(Messaging.updatePropositionsForSurfaces).toHaveBeenCalledTimes(1);
     expect(Messaging.updatePropositionsForSurfaces).toHaveBeenCalledWith(['edge-offers']);
   });
 
@@ -187,5 +254,9 @@ describe('Decisioning Items flow contract', () => {
 
     expect(refreshedSurface).toBeNull();
     expect(Messaging.updatePropositionsForSurfaces).not.toHaveBeenCalled();
+  });
+
+  it('exists check: ExperienceEvent constructor is reachable from the test harness', () => {
+    expect(new (ExperienceEvent as any)({ xdmData: { a: 1 } })).toEqual({ xdmData: { a: 1 } });
   });
 });

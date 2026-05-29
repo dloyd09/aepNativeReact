@@ -11,9 +11,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Edge } from '@adobe/react-native-aepedge';
 import { Identity, AuthenticatedState, IdentityMap, IdentityItem } from '@adobe/react-native-aepedgeidentity';
 import { UserProfile } from '@adobe/react-native-aepuserprofile';
-import { useProfileStorage } from '../../hooks/useProfileStorage';
+import { useProfile } from '../../components/ProfileContext';
 import { buildPageViewEvent, buildLoginEvent, buildLogoutEvent } from '../../src/utils/xdmEventBuilders';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isAdobeConfigured } from '../../src/utils/adobeConfig';
 
 export default function ProfileTab() {
@@ -30,7 +29,7 @@ export default function ProfileTab() {
   const [isLoginPending, setIsLoginPending] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [sdkInitTimedOut, setSdkInitTimedOut] = useState(false);
-  const { profile, setProfile } = useProfileStorage();
+  const { profile, saveProfile, getProfile } = useProfile();
   //console.log('Profile Context:', { profile });
 
   const refreshIdentityState = useCallback(async () => {
@@ -94,16 +93,7 @@ export default function ProfileTab() {
           return;
         }
 
-        // Get fresh profile from AsyncStorage
-        let currentProfile = { firstName: '', email: '' };
-        try {
-          const storedProfile = await AsyncStorage.getItem('userProfile');
-          if (storedProfile) {
-            currentProfile = JSON.parse(storedProfile);
-          }
-        } catch (error) {
-          console.error('Failed to read profile:', error);
-        }
+        const currentProfile = getProfile();
 
         // Send page view
         try {
@@ -128,7 +118,7 @@ export default function ProfileTab() {
       };
 
       handleFocus();
-    }, [refreshIdentityState])
+    }, [refreshIdentityState, getProfile])
   );
 
   const handleLogin = async () => {
@@ -142,12 +132,21 @@ export default function ProfileTab() {
     setIsLoginPending(true);
     setError('');
 
+    // AEP's Email namespace is case-sensitive: 'Dtboards09@gmail.com' and
+    // 'dtboards09@gmail.com' anchor two separate identity graphs that never merge,
+    // fragmenting the profile and stranding push tokens on the wrong cluster.
+    // Normalize once here (lowercase + trim) and use this canonical value for the
+    // identity, profile storage, attributes, and the login event so every downstream
+    // consumer agrees. Mirrors hashEmail()'s normalization in identityHelpers.ts.
+    // See docs/Push-Platform-Collision-APNS-vs-FCM.md.
+    const normalizedEmail = inputEmail.trim().toLowerCase();
+
     try {
       // item 10.2: await the UserProfile call so failures are visible in Assurance logs
       try {
         await UserProfile.updateUserAttributes({
           firstName: inputFirstName,
-          email: inputEmail,
+          email: normalizedEmail,
         });
         console.log('User profile updated in AEP');
       } catch (profileError) {
@@ -160,7 +159,7 @@ export default function ProfileTab() {
       setEcid(currentEcid || '');
 
       const newIdentityMap = new IdentityMap();
-      const emailIdentity = new IdentityItem(inputEmail, AuthenticatedState.AUTHENTICATED, false);
+      const emailIdentity = new IdentityItem(normalizedEmail, AuthenticatedState.AUTHENTICATED, false);
       newIdentityMap.addItem(emailIdentity, 'Email');
       if (currentEcid) {
         const ecidIdentity = new IdentityItem(currentEcid, AuthenticatedState.AUTHENTICATED, true);
@@ -171,9 +170,8 @@ export default function ProfileTab() {
       await Identity.updateIdentities(newIdentityMap);
       console.log('Email and ECID set as authenticated identities in AEP');
 
-      // Save profile to AsyncStorage
-      setProfile({ firstName: inputFirstName, email: inputEmail });
-      console.log('Profile saved to AsyncStorage:', { firstName: inputFirstName, email: inputEmail });
+      saveProfile({ firstName: inputFirstName, email: normalizedEmail });
+      console.log('Profile saved to ProfileContext:', { firstName: inputFirstName, email: normalizedEmail });
 
       // Send login success event with updated identityMap
       try {
@@ -183,7 +181,7 @@ export default function ProfileTab() {
 
         const loginEvent = await buildLoginEvent({
           identityMap: currentIdentityMap,
-          profile: { firstName: inputFirstName, email: inputEmail },
+          profile: { firstName: inputFirstName, email: normalizedEmail },
           success: true,
           method: 'basic'
         });
@@ -193,7 +191,7 @@ export default function ProfileTab() {
 
         console.log('✅ Login event sent successfully:', {
           participantName: inputFirstName,
-          email: inputEmail,
+          email: normalizedEmail,
           loginStatus: 'logged_in'
         });
 
@@ -201,13 +199,18 @@ export default function ProfileTab() {
         setIdentityMap(currentIdentityMap);
         setEcid(currentIdentityMap?.ECID?.[0]?.id || currentEcid || '');
 
-        // Login confirms ECID is present — retry any push token that was deferred
-        // because ECID was not available when the token first arrived.
+        // Re-sync the current push token now that the authenticated Email identity
+        // is attached. registerTokenWithAdobe polls ECID inline, so there is no
+        // longer a deferred-token queue to drain (the old retryPendingPushToken
+        // machinery was removed); re-registering here ensures the push profile
+        // event lands while the authenticated identityMap is active, which helps
+        // the token attach to the logged-in profile rather than an anonymous one.
+        // See docs/Push-Platform-Collision-APNS-vs-FCM.md.
         try {
           const { pushNotificationService } = require('../../src/utils/pushNotifications');
-          await pushNotificationService.retryPendingPushToken();
-        } catch (retryError) {
-          console.log('[Push] retryPendingPushToken skipped at login time:', retryError);
+          await pushNotificationService.registerCurrentTokenWithAdobe();
+        } catch (syncError) {
+          console.log('[Push] token re-sync skipped at login time:', syncError);
         }
       } catch (error) {
         console.error('❌ Error sending login event:', error);
@@ -215,7 +218,7 @@ export default function ProfileTab() {
 
       // item 3.1: switch to logged-in view only after ECID and identityMap are populated
       setFirstName(inputFirstName);
-      setEmail(inputEmail);
+      setEmail(normalizedEmail);
       setLoggedIn(true);
 
     } catch (error) {
@@ -271,8 +274,7 @@ export default function ProfileTab() {
     setInputPassword('');
     setError('');
 
-    // Clear profile from AsyncStorage
-    setProfile({ firstName: '', email: '' });
+    saveProfile({ firstName: '', email: '' });
     setIdentityMap(currentEcid ? { ECID: [{ id: currentEcid }] } : {});
     setEcid(currentEcid || '');
     console.log('User logged out and profile cleared');

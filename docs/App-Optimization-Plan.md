@@ -42,7 +42,7 @@ Each step is a prerequisite for the next. The app must support this chain clearl
 
 | # | Item | Reason Deferred |
 |---|---|---|
-| D1 | **Dual push notification stack** — `@react-native-firebase/messaging` + `expo-notifications` running simultaneously | Requires deeper restructure, warrants its own session |
+| D1 | **Dual push notification stack** — `@react-native-firebase/messaging` + `expo-notifications` running simultaneously | Requires deeper restructure, warrants its own session. **Confirmed gap (2026-05-29):** killed-state data-only AJO pushes show nothing in the tray because display is reimplemented in RN JS and the headless task never registers the handler. **Decision (2026-05-29):** solve in **native Android code** (Adobe `AEPMessagingService.handleRemoteMessage` in a native `FirebaseMessagingService`), **not** by making the JS layer survive the kill — see `docs/Killed-State-Push-Android-Native-Path.md`. Foreground + warm-background paths work (see `docs/Push-Tracking-Path-Separation.md`). |
 
 ---
 
@@ -218,7 +218,7 @@ When the app reopens and restores a saved session from AsyncStorage, the restore
 
 **Recommendation:** Call `refreshIdentityState()` inside the profile restore `useEffect` to ensure ECID and identityMap are always in sync when a session is restored.
 
-**Files:** `app/(consumerTabs)/profile.tsx`, `hooks/useProfileStorage.js`
+**Files:** `app/(consumerTabs)/profile.tsx` (storage layer now `components/ProfileContext.tsx`; `hooks/useProfileStorage.js` deleted in the 8.1/8.2 migration)
 
 ---
 
@@ -307,6 +307,23 @@ Log user interaction with push notifications:
 
 ---
 
+### 4.8 AJO Push correlationID in Tracking Event 🟡 — ✅ Resolved
+
+**Confirmed via Assurance session 2026-05-29** (foreground + warm-background AJO taps). See `docs/Push-Tracking-Path-Separation.md` and `docs/CorrelationID-Implementation-Plan.md`.
+
+When AJO sends a push notification it embeds a `correlationID` in the notification data payload. The app must echo this value back in the push tracking event at `_experience.decisioning.propositions[0].scopeDetails.correlationID`. On WebSDK this is auto-populated; on mobile it must be done manually.
+
+**Resolution (2026-05-29):**
+- `buildPushTrackingEvent()` now accepts an optional `correlationID` and emits the conditional `_experience.decisioning.propositions[0].scopeDetails.correlationID` block when present.
+- The key-name guess in this item was **wrong**. AJO does **not** use a flat key — the correlationID (and the real `-N`-suffixed messageID) are nested inside the `_xdm` value, which arrives as a **JSON string** in the notification `data`: `_xdm → mixins._experience.decisioning.propositions[0].scopeDetails.correlationID` and `…customerJourneyManagement.messageExecution.messageID`. The handler parses `_xdm` tolerantly (string or object) and falls back to flat keys only.
+- Tracking is **gated on a real `_xdm`/messageID**, so local-test pushes no longer fabricate bare-UUID open events. Verified in Assurance: clean `pushTracking.applicationOpened` events carrying correlationID + real messageID + `_adobecmteas`, and no new junk.
+
+**Still open (deferred to D1):** killed-state data-only push *delivery* (nothing shows in the tray when swipe-killed) — a dual-stack delivery gap, not a correlationID gap. See the D1 row above.
+
+**Files:** `app/_layout.tsx`, `src/utils/xdmEventBuilders.ts`, `src/utils/pushNotifications.ts`, `app/(techScreens)/PushNotificationView.tsx`
+
+---
+
 ## Group 5 — Cleanup
 
 > 🟢 Clarity: 5.4. ⚪ Stability: 5.1, 5.2, 5.3.
@@ -387,6 +404,20 @@ The `buildProductViewEvent()` builder exists in `xdmEventBuilders.ts`, but it is
 
 ---
 
+### 6.4 Add `_adobecmteas` to Proposition Tracking Manual Fallback 🟡 — ✅ Resolved
+
+**Confirmed via Assurance session 2026-05-26** — see `Assurance-Validation-Report.md` §"Session: 2026-05-26".
+
+**Root cause (confirmed 2026-05-26):** `DCVS-1106-400: required key [_adobecmteas] not found` on `decisioning.propositionInteract` / `decisioning.propositionDisplay` events. Two sources were identified:
+
+1. **Manual fallback path** (`src/utils/decisioningItems.ts`) — resolved: `trackDecisioningItemDisplay` and `trackDecisioningItemInteraction` now accept `identityMap` and `profile`, delegate to `buildPropositionDisplayEvent` / `buildPropositionInteractEvent` in `xdmEventBuilders.ts` which include the full `_adobecmteas` tenant block and `buildEnvironment()`.
+
+2. **`OptimizeView.tsx` tech screen** — resolved 2026-05-26: The screen was calling `offer.displayed(prop)` directly (native SDK bypass — sends minimal XDM with `environment: {}` and no `_adobecmteas`). Removed both calls. Tech screens inspect SDK state; they must not generate analytics events. Proposition tracking belongs exclusively to the consumer screen (`decisioningItems.tsx`) via `trackDecisioningItemDisplay` / `trackDecisioningItemInteraction`.
+
+**Files:** `src/utils/decisioningItems.ts`, `app/(consumerTabs)/decisioningItems.tsx`, `app/(techScreens)/OptimizeView.tsx`
+
+---
+
 ### 6.3 Consent Toggle in Consumer View
 
 > **Decision (2026-03-26): Do not implement.** Consent remains hardcoded to `"y"` in `adobeConfig.ts`.
@@ -428,41 +459,33 @@ The `buildProductViewEvent()` builder exists in `xdmEventBuilders.ts`, but it is
 
 ## Group 8 — Cold Start & Storage Hardening
 
-> 🔴 Learning Loop: 8.1 — screens render with blank identity on every cold start. 🟡 Real-World Fidelity: 8.2. 🟢 Clarity: 8.3.
+> 🔴 Learning Loop: 8.1 ✅ — screens render with blank identity on every cold start. 🟡 Real-World Fidelity: 8.2 ✅. 🟢 Clarity: 8.3 ✅.
 > Found in full codebase audit (2026-03-26). These are cross-platform issues that affect every student on first open.
+> **Status (2026-05-22):** 8.1 and 8.2 resolved by the ProfileContext migration (see Assurance Validation Report §"Critical Bug"). 8.3 resolved by extracting `safeParseJSON` into `src/utils/safeParseJSON.ts` and applying it at every AsyncStorage parse site.
 
-### 8.1 `useProfileStorage` Missing `isLoading` State 🔴
+### 8.1 `useProfileStorage` Missing `isLoading` State 🔴 — ✅ Superseded
 
-`hooks/useProfileStorage.js` loads the saved profile from AsyncStorage in a `useEffect` with an empty dependency array — correct — but it never exposes whether that load is still in progress. The hook returns `{ profile, setProfile }` only.
-
-**Problem:** `home.tsx`, `cart.tsx`, and `Checkout.tsx` all read `profile` immediately on mount. On cold start, AsyncStorage hasn't resolved yet, so every screen that derives identity state from the profile (email, firstName) renders with empty values for 100–300ms. Students see blank XDM events in Assurance during that window if any screen sends an event on focus before the load completes.
-
-**Fix:** Add `isProfileLoading` boolean to the hook. Set it `true` on mount, `false` in the `finally` block of `loadProfile`. Expose it in the return value. Screens should guard their `useFocusEffect` XDM sends with `if (isProfileLoading) return;` to prevent empty-identity events.
-
-**Files:** `hooks/useProfileStorage.js`, `app/(consumerTabs)/home.tsx`, `app/(consumerTabs)/cart.tsx`, `app/(consumerTabs)/Checkout.tsx`
+`isProfileLoading` was added to the hook as initially planned, but the underlying architecture was the deeper problem (see `docs/Assurance-Validation-Report.md` §"Critical Bug"). The hook has now been replaced by `components/ProfileContext.tsx` (single `ProfileProvider` at app root, mounted in `app/_layout.tsx`). The context exposes the same `{ profile, saveProfile, isProfileLoading }` surface so the guard pattern `if (isProfileLoading) return;` continues to work on every consumer screen. All 8 consumer screens migrated; `hooks/useProfileStorage.js` deleted.
 
 ---
 
-### 8.2 Scattered Direct AsyncStorage Reads for User Profile 🟡
+### 8.2 Scattered Direct AsyncStorage Reads for User Profile 🟡 — ✅ Superseded
 
-`home.tsx` (line 83), `cart.tsx` (line 103), and `Checkout.tsx` (lines 79, 139) each call `AsyncStorage.getItem('userProfile')` directly inside `useFocusEffect` or event handlers — bypassing the `useProfileStorage` hook entirely. This means:
-- The same key is read from disk 3–4 times per navigation cycle
-- Any change to the storage key name or schema must be updated in 5+ places
-- No shared loading state means screens can race each other on cold start
-
-**Fix:** Remove all direct `AsyncStorage.getItem('userProfile')` calls from consumer screens. These screens already have access to `profile` from the hook via props or a shared state mechanism. Pass `profile` down or use the hook's return value where the direct reads are happening.
-
-**Files:** `app/(consumerTabs)/home.tsx`, `app/(consumerTabs)/cart.tsx`, `app/(consumerTabs)/Checkout.tsx`
+Resolved by the ProfileContext migration (see 8.1). Inline `AsyncStorage.getItem('userProfile')` reads in `useFocusEffect` blocks were removed — every screen now reads `profile` from a single shared context. As part of the same migration, `useFocusEffect` callbacks that reference `profile` had `profile` added to their `useCallback` dependency arrays to avoid stale-closure regressions post-login (governance condition).
 
 ---
 
-### 8.3 Unguarded `JSON.parse()` on AsyncStorage Values 🟢
+### 8.3 Unguarded `JSON.parse()` on AsyncStorage Values 🟢 — ✅ Resolved
 
-All direct `AsyncStorage.getItem()` calls across consumer screens call `JSON.parse()` on the stored string without a try-catch or structure validation. If AsyncStorage returns a non-JSON string (corrupted entry, schema migration remnant), the parse throws and the component catches it silently, defaulting to an empty object. The silent failure masks the real error.
+**Final shape (2026-05-22):** `safeParseJSON<T>(value, fallback, label?)` lives at `src/utils/safeParseJSON.ts` as the single shared helper. It returns the typed fallback when the value is null/empty/malformed and logs parse failures with a caller-supplied label so corrupted entries can be diagnosed instead of silently masked.
 
-**Fix:** Wrap `JSON.parse()` in a utility function `safeParseJSON(value, fallback)` that catches parse errors, logs them with context, and returns the fallback. Use it everywhere AsyncStorage values are parsed.
+**Callsites converted:**
+- `components/ProfileContext.tsx` — profile state hydration (imports the shared util; was a local copy until 8.3 closeout).
+- `src/utils/decisioningItems.ts` — `refreshDecisioningSurfaceFromStoredConfig` (was the only truly unguarded site; previously would throw straight up the post-purchase callstack on a corrupted entry).
+- `app/(consumerTabs)/decisioningItems.tsx` — `loadConfigAndFetchItems`; now sets a user-visible error rather than relying on a far-away outer catch.
+- `app/(techScreens)/DecisioningItemsView.tsx` — config bootstrap; falls back to defaults on parse failure instead of leaving config undefined.
 
-**Files:** `hooks/useProfileStorage.js`, `app/(consumerTabs)/home.tsx`, `app/(consumerTabs)/cart.tsx`, `app/(consumerTabs)/Checkout.tsx`
+**Intentionally not touched:** `app/(techScreens)/OptimizeView.tsx:372` parses AEP proposition `item.content`, not an AsyncStorage value, so it's outside 8.3's scope. The two `JSON.parse` calls inside `parseDecisioningItemContent` in `src/utils/decisioningItems.ts` already had try/catch with explicit fallback shapes, and converting them would change behavior; they were left alone.
 
 ---
 
@@ -630,17 +653,17 @@ Items are listed in implementation order within each session. Implement 🔴 bef
 | 1 — Setup View | 1.1, 1.2, 1.3 | — | — | — | CoreView.tsx |
 | 2 — SDK Init | 2.1 | 2.2 | 2.3 | — | adobeConfig.ts, _layout.tsx |
 | 3 — Profile | 3.2, 3.4 | — | 3.1, 3.3 | — | profile.tsx |
-| 4 — Push Fixes + Logging | 4.2+4.6 (unit) | 4.7, 4.5 | 4.1, 4.3, 4.4 | — | pushNotifications.ts, adobeConfig.ts |
+| 4 — Push Fixes + Logging | 4.2+4.6 (unit) | 4.7, 4.5, 4.8 | 4.1, 4.3, 4.4 | — | pushNotifications.ts, adobeConfig.ts, xdmEventBuilders.ts |
 | 5 — Cleanup | — | — | 5.4 | 5.1, 5.2, 5.3 | package.json, EdgeBridgeView.tsx |
-| 6 — Event Coverage | 6.3 | 6.1, 6.2 | — | — | consumer screens, xdmEventBuilders.ts |
+| 6 — Event Coverage | 6.3 | 6.1, 6.2, 6.4 | — | — | consumer screens, xdmEventBuilders.ts, decisioningItems.ts |
 | 7 — Tech Screen Accuracy | — | 7.2 | 7.1 | — | MessagingView.tsx, IdentityView.tsx |
-| 8 — Cold Start & Storage | 8.1 | 8.2 | 8.3 | — | useProfileStorage.js, consumer screens |
+| 8 — Cold Start & Storage | 8.1 ✅ | 8.2 ✅ | 8.3 ✅ | — | ProfileContext.tsx, safeParseJSON.ts, consumer screens |
 | 9 — Push Lifecycle | 9.1 | 9.2 | 9.3 | — | pushNotifications.ts, CoreView.tsx |
 | 10 — Async Safety | 10.1 | 10.2, 10.3 | 10.4 | — | Checkout.tsx, adobeConfig.ts, _layout.tsx |
 | 11 — Navigation & Timers | — | 11.1 | 11.2 | — | cart.tsx, Checkout.tsx |
 | D1 — Push Stack | Deferred | | | | Dedicated session |
 
-**Total: 42 items active, 1 deferred.**
+**Total: 44 items active, 1 deferred.**
 
 ### Implementation order across groups (governance-prioritized)
 
@@ -648,12 +671,12 @@ Items are listed in implementation order within each session. Implement 🔴 bef
 |---|---|---|---|
 | 1 | 4.2+4.6 (single unit) | 🔴 | Confirmed production failure — push steps 4→6 broken; must ship together |
 | 2 | 9.1 | 🔴 | FCM init flag race permanently blocks push retry after any setup failure |
-| 3 | 8.1 | 🔴 | Cold start: blank identity state causes empty XDM events on every new session |
+| 3 | 8.1 ✅ | 🔴 | Cold start: blank identity state causes empty XDM events on every new session — resolved 2026-05-22 by ProfileContext migration |
 | 4 | 10.1 | 🔴 | Checkout crashes on cold start — unhandled Identity rejection |
 | 5 | 1.1, 1.2, 1.3 | 🔴 | Dependency chain visibility — students can't self-diagnose |
 | 6 | 2.1 | 🔴 | SDK race condition breaks step 3 for new users |
 | 7 | 3.2, 3.4 | 🔴 | Silent ECID omission corrupts identity chain |
 | 8 | 6.3 | 🔴 | Consent curriculum has zero demo path |
-| 9 | 4.7, 4.5, 6.1, 6.2, 7.2, 2.2, 8.2, 10.2, 10.3, 11.1 | 🟡 | Real-world fidelity gaps |
-| 10 | 2.3, 3.1, 3.3, 4.1, 4.3, 4.4, 5.4, 7.1, 8.3, 9.2, 9.3, 10.4, 11.2 | 🟢 | Clarity improvements |
+| 9 | 6.4, 4.8, 4.7, 4.5, 6.1, 6.2, 7.2, 2.2, 8.2 ✅, 10.2, 10.3, 11.1 | 🟡 | Real-world fidelity gaps — 6.4 confirmed failing in Assurance (schema rejection); 4.8 is push correlationID; 8.2 resolved 2026-05-22 |
+| 10 | 2.3, 3.1, 3.3, 4.1, 4.3, 4.4, 5.4, 7.1, 8.3 ✅, 9.2, 9.3, 10.4, 11.2 | 🟢 | Clarity improvements (8.3 resolved 2026-05-22) |
 | 11 | 5.1, 5.2, 5.3 | ⚪ | Cleanup |

@@ -6,7 +6,7 @@ This document is an updated implementation review of the consumer-facing decisio
 - `app/(consumerTabs)/offers.tsx`
 - supporting technical screens and checkout behavior that affect consumer personalization
 
-It complements [QA-Use-Cases-Review.md](QA-Use-Cases-Review.md) and [Fix-And-Test-Adjustment-Plan.md](Fix-And-Test-Adjustment-Plan.md).
+For current status see [Assurance-Validation-Report.md](Assurance-Validation-Report.md) and [Backlog-Status-Items2-10.md](Backlog-Status-Items2-10.md).
 
 ## 1. Current alignment summary
 

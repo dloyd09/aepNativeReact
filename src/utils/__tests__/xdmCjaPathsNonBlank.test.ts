@@ -9,7 +9,6 @@ import {
   buildProductListOpenEvent,
   buildProductRemovalEvent,
   buildPurchaseEvent,
-  buildProductInteractionEvent,
   buildProductViewEvent,
   buildProductListAddEvent,
 } from '../xdmEventBuilders';
@@ -138,30 +137,36 @@ describe('XDM paths non-blank (CJA commerce SDR)', () => {
     expectPathNonBlank(xdmData, 'commerce.shipping.shippingAmount');
     expectPathNonBlank(xdmData, 'productListItems.0.priceTotal');
     expectPathNonBlank(xdmData, 'web.webInteraction._adobecmteas.engagement.transactionType');
+    expect(xdmData.web?.webInteraction?._adobecmteas?.engagement?.transactionType).toBe('Lower Funnel');
   });
 
-  it('buildProductListAddEvent: productListAdds + line priceTotal', async () => {
+  it('buildProductListAddEvent: productListAdds + line priceTotal + productCategories', async () => {
     const { xdmData } = await buildProductListAddEvent({
       identityMap,
       profile,
       cartSessionId: 'cart-1',
-      product: { sku: 'S1', name: 'P1', price: 12.5, category: 'c', quantity: 2 },
+      product: { sku: 'S1', name: 'P1', price: 12.5, category: 'Equipment', secondaryCategory: 'Surfing', quantity: 2 },
     });
     expectCoreEventFields(xdmData);
     expectPathNonBlank(xdmData, 'commerce.productListAdds.value');
     expectPathNonBlank(xdmData, 'productListItems.0.priceTotal');
     expectPathNonBlank(xdmData, 'productListItems.0.SKU');
+    expectPathNonBlank(xdmData, 'productListItems.0.productCategories.0.categoryName');
+    expect(xdmData.productListItems[0].productCategories).toHaveLength(2);
   });
 
-  it('buildProductViewEvent: productViews + line priceTotal', async () => {
+  it('buildProductViewEvent: productViews + line priceTotal + productCategories', async () => {
     const { xdmData } = await buildProductViewEvent({
       identityMap,
       profile,
-      product: { sku: 'S1', name: 'P1', price: 99, category: 'c' },
+      product: { sku: 'S1', name: 'P1', price: 99, category: 'Equipment', secondaryCategory: 'Surfing' },
     });
     expectCoreEventFields(xdmData);
     expectPathNonBlank(xdmData, 'commerce.productViews.value');
     expectPathNonBlank(xdmData, 'productListItems.0.priceTotal');
+    expectPathNonBlank(xdmData, 'productListItems.0.productCategories.0.categoryName');
+    expectPathNonBlank(xdmData, 'web.webInteraction._adobecmteas.engagement.transactionType');
+    expect(xdmData.web?.webInteraction?._adobecmteas?.engagement?.transactionType).toBe('Upper Funnel');
   });
 
   it('buildProductListOpenEvent: productListOpens', async () => {
@@ -174,32 +179,16 @@ describe('XDM paths non-blank (CJA commerce SDR)', () => {
     expectPathNonBlank(xdmData, 'commerce.productListOpens.value');
   });
 
-  it('buildProductInteractionEvent (quantity update): productListUpdates', async () => {
-    const { xdmData } = await buildProductInteractionEvent({
+  it('cart page view emits transactionType=Upper Funnel', async () => {
+    const { xdmData } = await buildPageViewEvent({
       identityMap,
       profile,
-      transactionType: 'update_cart_quantity_increase',
+      pageTitle: 'Cart',
+      pagePath: '/cart',
+      pageType: 'cart',
       cartSessionId: 'cart-1',
-      productListItems: [
-        { sku: 'S1', name: 'P1', price: 10, quantity: 2, category: 'c', image: null },
-      ],
+      productListItems: [],
     });
-    expectCoreEventFields(xdmData);
-    expectPathNonBlank(xdmData, 'commerce.productListUpdates.value');
-    expectPathNonBlank(xdmData, 'web.webInteraction._adobecmteas.engagement.transactionType');
-  });
-
-  it('buildProductInteractionEvent (remove): productListRemovals', async () => {
-    const { xdmData } = await buildProductInteractionEvent({
-      identityMap,
-      profile,
-      transactionType: 'remove_from_cart',
-      cartSessionId: 'cart-1',
-      productListItems: [
-        { sku: 'S1', name: 'P1', price: 10, quantity: 1, category: 'c', image: null },
-      ],
-    });
-    expectCoreEventFields(xdmData);
-    expectPathNonBlank(xdmData, 'commerce.productListRemovals.value');
+    expect(xdmData.web?.webInteraction?._adobecmteas?.engagement?.transactionType).toBe('Upper Funnel');
   });
 });

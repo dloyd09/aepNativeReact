@@ -4,26 +4,39 @@ import { ThemedText } from '../../components/ThemedText';
 import { View, TouchableOpacity, StyleSheet, Button, Image, FlatList } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, useFocusEffect } from '@react-navigation/native';
-import { Optimize, DecisionScope } from '@adobe/react-native-aepoptimize';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { Edge } from '@adobe/react-native-aepedge';
 import { useCart } from '../../components/CartContext';
-import { useCartSession } from '../../hooks/useCartSession';
-import { useProfileStorage } from '../../hooks/useProfileStorage';
+import { useProfile } from '../../components/ProfileContext';
 import { buildPageViewEvent, buildProductListAddEvent } from '../../src/utils/xdmEventBuilders';
+import {
+  DecisioningItem,
+  fetchPropositionsForSurface,
+  trackDecisioningItemDisplay,
+  trackDecisioningItemInteraction,
+} from '../../src/utils/decisioningItems';
 import {
   ConsumerOffer,
   buildOfferTrackingKey,
-  buildOptimizeRequestXdm,
-  createOptimizePropositionUpdateHandler,
-  getOffersForScope,
   isValidOfferImage,
-  trackOfferDisplay,
-  trackOfferTap,
+  mapPropositionsToOffers,
 } from '../../src/utils/offersOptimize';
 
+// AsyncStorage key — preserved for backward compatibility with previously
+// saved values. After this migration the stored value is the partial surface
+// name (e.g., "edge-offers"), not a `DecisionScope` URI.
 const DECISION_SCOPE_KEY = 'optimize_decision_scope';
+
+function buildDecisioningItemFromOffer(offer: ConsumerOffer): DecisioningItem {
+  return {
+    id: offer.id,
+    content: offer.rawOffer?.data?.content ?? offer.rawOffer?.content,
+    proposition: offer.proposition,
+    propositionItem: offer.rawOffer,
+    surface: offer.surface,
+  };
+}
 
 const OfferCard = ({
   offer,
@@ -95,16 +108,19 @@ const OfferCard = ({
 export default function OffersTab() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { profile, isProfileLoading } = useProfileStorage();
+  const { profile, isProfileLoading, getProfile } = useProfile();
   const [decisionScope, setDecisionScope] = useState('');
   const [offers, setOffers] = useState<ConsumerOffer[]>([]);
-  const { addToCart, isInCart } = useCart();
-  const { cartSessionId, isLoading: isCartSessionLoading } = useCartSession();
+  const { addToCart, isInCart, cartSessionId, isCartSessionLoading } = useCart();
   const [identityMap, setIdentityMap] = useState({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const decisionScopeRef = useRef(decisionScope);
   const displayedOfferKeysRef = useRef(new Set<string>());
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 });
+  // The viewability callback is created once at mount, so it must read
+  // identityMap and profile via refs to see current values.
+  const identityMapRef = useRef<any>({});
+  const profileRef = useRef<any>(undefined);
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: Array<{ item: ConsumerOffer; isViewable?: boolean }> }) => {
     viewableItems.forEach(({ item, isViewable }) => {
       if (!isViewable) {
@@ -117,7 +133,13 @@ export default function OffersTab() {
       }
 
       displayedOfferKeysRef.current.add(trackingKey);
-      trackOfferDisplay(item);
+      void trackDecisioningItemDisplay(
+        buildDecisioningItemFromOffer(item),
+        identityMapRef.current,
+        profileRef.current
+      ).catch((trackError) => {
+        console.error('Error tracking offer display:', trackError);
+      });
     });
   });
 
@@ -146,14 +168,20 @@ export default function OffersTab() {
       const result = await Identity.getIdentities();
       if (result && (result as any).identityMap) {
         setIdentityMap((result as any).identityMap);
+        identityMapRef.current = (result as any).identityMap;
         return (result as any).identityMap;
       }
       setIdentityMap(result);
+      identityMapRef.current = result;
       return result;
     } catch {
       return {};
     }
   }, []);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
 
   useEffect(() => {
     refreshIdentityMap().catch((error) => {
@@ -165,60 +193,31 @@ export default function OffersTab() {
     decisionScopeRef.current = decisionScope;
   }, [decisionScope]);
 
-  const applyOffersForScope = useCallback((propositions?: Map<string, any>, scopeName?: string) => {
-    const resolvedScope = scopeName || decisionScopeRef.current;
-    const nextOffers = getOffersForScope(propositions, resolvedScope);
-    displayedOfferKeysRef.current.clear();
-    setOffers(nextOffers);
-  }, []);
-
-  const fetchOffersForScope = useCallback(async (scopeName: string, forceRefresh = true) => {
-    if (!scopeName) {
-      console.log('Cannot fetch propositions - no decision scope configured');
+  const fetchOffersForScope = useCallback(async (surfaceName: string, forceRefresh = true) => {
+    if (!surfaceName) {
+      console.log('Cannot fetch propositions - no surface configured');
       setOffers([]);
       return;
     }
 
-    const userScope = new DecisionScope(scopeName);
-
     try {
       setIsRefreshing(true);
-      if (forceRefresh) {
-        const ecid = await Identity.getExperienceCloudId();
-        if (!ecid) {
-          console.error('ECID not found');
-          return;
-        }
-
-        await Optimize.updatePropositions([userScope], buildOptimizeRequestXdm(ecid));
-      }
-
-      const propositions = await Optimize.getPropositions([userScope]);
-      applyOffersForScope(propositions, userScope.getName());
+      // fetchPropositionsForSurface always pings the Edge then reads the
+      // settled cache. The `forceRefresh` argument is retained for API
+      // compatibility with the previous Optimize flow but has no effect:
+      // there is no separate cached-only path on the Messaging surface
+      // helpers used here.
+      void forceRefresh;
+      const propositions = await fetchPropositionsForSurface(surfaceName);
+      const nextOffers = mapPropositionsToOffers(propositions, surfaceName);
+      displayedOfferKeysRef.current.clear();
+      setOffers(nextOffers);
     } catch (error) {
       console.error('Error fetching propositions:', error);
       setOffers([]);
     } finally {
       setIsRefreshing(false);
     }
-  }, [applyOffersForScope]);
-
-  useEffect(() => {
-    const updateHandler = createOptimizePropositionUpdateHandler(decisionScopeRef, (nextOffers) => {
-      displayedOfferKeysRef.current.clear();
-      setOffers(nextOffers);
-    });
-
-    const subscription = Optimize.onPropositionUpdate({
-      call(propositions) {
-        updateHandler(propositions);
-      },
-    });
-
-    return () => {
-      // Remove listener on unmount to prevent duplicate handlers after re-mount
-      (subscription as any)?.remove?.();
-    };
   }, []);
 
   useFocusEffect(
@@ -264,7 +263,7 @@ export default function OffersTab() {
         try {
           const pageViewEvent = await buildPageViewEvent({
             identityMap: currentIdentityMap,
-            profile,
+            profile: getProfile(),
             pageTitle: 'Offers',
             pagePath: '/offers',
             pageType: 'offers',
@@ -283,7 +282,16 @@ export default function OffersTab() {
   );
 
   const handleAddToCartWithTracking = async (offer: ConsumerOffer) => {
-    trackOfferTap(offer);
+    try {
+      await trackDecisioningItemInteraction(
+        buildDecisioningItemFromOffer(offer),
+        'tap',
+        identityMapRef.current,
+        profileRef.current
+      );
+    } catch (trackError) {
+      console.error('Error tracking offer tap:', trackError);
+    }
 
     addToCart({
       name: offer.title || 'Unnamed Offer',
@@ -308,7 +316,7 @@ export default function OffersTab() {
     try {
       const productListAddEvent = await buildProductListAddEvent({
         identityMap: currentIdentityMap,
-        profile,
+        profile: getProfile(),
         product: {
           sku: offer.sku || 'defaultSku',
           name: offer.title || 'Unnamed Offer',
@@ -317,6 +325,9 @@ export default function OffersTab() {
           quantity: 1,
         },
         cartSessionId,
+        pageTitle: 'Offers',
+        pagePath: '/offers',
+        pageType: 'offers',
       });
 
       console.log('Sending offer add to cart event:', offer.title);

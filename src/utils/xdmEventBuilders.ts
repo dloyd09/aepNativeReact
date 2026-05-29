@@ -47,6 +47,11 @@ export const buildEnvironment = () => {
   };
 };
 
+// Converts a slash-path to a colon-path for web.webPageDetails.name
+// e.g. "/products/women/shorts" → "products:women:shorts"
+const makePageName = (path: string): string =>
+  path.replace(/^\//, '').replace(/\//g, ':');
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -70,6 +75,7 @@ interface PageViewEventParams extends BaseEventParams {
   siteSection?: string;
   siteSection2?: string;
   siteSection3?: string;
+  pageLoadTime?: number;
   productListItems?: any[];
   cartSessionId?: string;
 }
@@ -82,6 +88,9 @@ interface CheckoutEventParams extends BaseEventParams {
 interface ProductRemovalParams extends BaseEventParams {
   cartSessionId: string;
   productListItems: any[]; // Items being removed
+  pageTitle?: string;
+  pagePath?: string;
+  pageType?: string;
 }
 
 interface PurchaseEventParams extends BaseEventParams {
@@ -97,15 +106,10 @@ interface PurchaseEventParams extends BaseEventParams {
   taxAmount?: number;
 }
 
-interface ProductInteractionParams extends BaseEventParams {
-  transactionType: 'add_to_cart' | 'remove_from_cart' | 'update_cart_quantity_increase' | 'update_cart_quantity_decrease';
-  productListItems: any[];
-  cartSessionId?: string;
-}
-
 interface LoginEventParams extends BaseEventParams {
   success: boolean;
   method?: string;
+  registration?: boolean;
 }
 
 interface LogoutEventParams extends BaseEventParams {
@@ -117,7 +121,11 @@ interface ProductViewEventParams extends BaseEventParams {
     name: string;
     price: number;
     category?: string;
+    secondaryCategory?: string;
   };
+  pageTitle?: string;
+  pagePath?: string;
+  pageType?: string;
 }
 
 interface ProductListAddEventParams extends BaseEventParams {
@@ -126,14 +134,44 @@ interface ProductListAddEventParams extends BaseEventParams {
     name: string;
     price: number;
     category?: string;
+    secondaryCategory?: string;
     quantity?: number;
   };
   cartSessionId: string;
+  pageTitle?: string;
+  pagePath?: string;
+  pageType?: string;
+}
+
+interface PushTrackingEventParams extends BaseEventParams {
+  pushProvider: 'apns' | 'fcm';
+  pushProviderMessageID: string;
+  interaction: 'opened' | 'customAction';
+  actionID?: string;
+  correlationID?: string;
+}
+
+interface PushRegistrationEventParams extends BaseEventParams {
+  pushProvider: 'apns' | 'fcm';
+  pushToken: string;
+}
+
+interface PropositionTrackingEventParams extends BaseEventParams {
+  /** Partial XDM map returned by Optimize Offer.generateDisplayInteractionXdm / generateTapInteractionXdm. Contains eventType + _experience.decisioning. */
+  generatedXdm: any;
+  /** Interaction label (e.g. 'click'). Only used for interact events; ignored on display. */
+  interaction?: string;
+  /** When tracking an embedded sub-item (e.g. one entry inside an isJsonContent array), override propositions[0].items so AJO ties the event to the right token. */
+  embeddedItem?: { id: string; trackingToken: string };
 }
 
 /** Params for product list open (e.g. new cart created). Call when a new cart session is created. */
 interface ProductListOpenEventParams extends BaseEventParams {
   cartSessionId?: string;
+  pageTitle?: string;
+  pagePath?: string;
+  pageType?: string;
+  productListItems?: any[];
 }
 
 // ============================================================================
@@ -159,20 +197,29 @@ export const formatProductListItems = (
   items: any[],
   cartSessionId: string
 ): any[] => {
-  return items.map(item => ({
-    SKU: item.sku || 'unknown',
-    name: item.name || item.title || 'Unnamed Product',
-    quantity: item.quantity || 1,
-    priceTotal: (item.price || 0) * (item.quantity || 1),
-    _adobecmteas: {
-      lowerFunnel: {
-        cartID: cartSessionId
-      },
-      products: {
-        unitPrice: item.price || 0
-      }
+  return items.map(item => {
+    const categories: { categoryID: string; categoryName: string }[] = [
+      { categoryID: 'primaryCategory', categoryName: item.category || 'unknown' },
+    ];
+    if (item.secondaryCategory) {
+      categories.push({ categoryID: 'secondaryCategory', categoryName: item.secondaryCategory });
     }
-  }));
+    return {
+      SKU: item.sku || 'unknown',
+      name: item.name || item.title || 'Unnamed Product',
+      quantity: item.quantity || 1,
+      priceTotal: (item.price || 0) * (item.quantity || 1),
+      productCategories: categories,
+      _adobecmteas: {
+        lowerFunnel: {
+          cartID: cartSessionId
+        },
+        products: {
+          unitPrice: item.price || 0
+        }
+      }
+    };
+  });
 };
 
 // ============================================================================
@@ -217,14 +264,14 @@ export const buildPageViewEvent = async (
   // Only include identities if we have at least ECID
   const tenantData: any = {
     authentication: {
-      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'not-logged-in'
     },
     visitorDetails: {
-      visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
+      visitorType: params.profile?.firstName ? 'Customer' : 'Prospect'
     },
     channelInfo: {
       channel: 'Mobile App',
-      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
+      participantName: (params.profile?.firstName || 'prospect').toLowerCase()
     }
   };
 
@@ -251,12 +298,20 @@ export const buildPageViewEvent = async (
         pageViews: {
           value: 1  // Required field for mobileApp.navigation.pageViews eventType
         },
+        server: 'mobileapp',
+        name: makePageName(params.pagePath),
+        URL: params.pagePath,
         _adobecmteas: {
           pageTitle: params.pageTitle,
           pagePath: params.pagePath,
           pageType: params.pageType,
           language: 'en-US'
         }
+      },
+      webInteraction: {
+        linkClicks: { value: 0 },
+        name: params.pageTitle.toLowerCase(),
+        _adobecmteas: {}
       }
     }
   };
@@ -282,6 +337,9 @@ export const buildPageViewEvent = async (
   if (params.siteSection3 && params.siteSection3 !== undefined) {
     xdmData.web.webPageDetails._adobecmteas.siteSection3 = params.siteSection3;
   }
+  if (params.pageLoadTime !== undefined) {
+    xdmData.web.webPageDetails._adobecmteas.pageLoadTime = params.pageLoadTime;
+  }
 
   // Add product list items if provided
   if (params.productListItems && params.productListItems.length > 0 && params.cartSessionId) {
@@ -298,6 +356,7 @@ export const buildPageViewEvent = async (
         value: 1
       }
     };
+    xdmData.web.webInteraction._adobecmteas.engagement = { transactionType: 'Upper Funnel' };
   }
 
   // Category/browse listings: fire commerce.productListViews so AJO journeys that qualify
@@ -348,14 +407,14 @@ export const buildCheckoutEvent = async (
   // Build tenant data
   const tenantData: any = {
     authentication: {
-      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'not-logged-in'
     },
     visitorDetails: {
-      visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
+      visitorType: params.profile?.firstName ? 'Customer' : 'Prospect'
     },
     channelInfo: {
       channel: 'Mobile App',
-      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
+      participantName: (params.profile?.firstName || 'prospect').toLowerCase()
     }
   };
 
@@ -391,6 +450,9 @@ export const buildCheckoutEvent = async (
     web: {
       webPageDetails: {
         pageViews: { value: 1 },  // For "Checkout Views" metrics in CJA
+        server: 'mobileapp',
+        name: 'cart',
+        URL: '/cart',
         _adobecmteas: {
           pageTitle: 'Shopping Cart',
           pagePath: '/cart',
@@ -398,9 +460,11 @@ export const buildCheckoutEvent = async (
         }
       },
       webInteraction: {
+        linkClicks: { value: 0 },
+        name: 'shopping cart',
         _adobecmteas: {
           engagement: {
-            transactionType: 'checkout'
+            transactionType: 'Lower Funnel'
           }
         }
       }
@@ -435,14 +499,14 @@ export const buildProductListOpenEvent = async (
 
   const tenantData: any = {
     authentication: {
-      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'not-logged-in'
     },
     visitorDetails: {
-      visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
+      visitorType: params.profile?.firstName ? 'Customer' : 'Prospect'
     },
     channelInfo: {
       channel: 'Mobile App',
-      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
+      participantName: (params.profile?.firstName || 'prospect').toLowerCase()
     }
   };
   if (identities && Object.keys(identities).length > 0) {
@@ -459,6 +523,33 @@ export const buildProductListOpenEvent = async (
     environment: buildEnvironment(),
     commerce: {
       productListOpens: { value: 1 }
+    },
+    ...(params.productListItems && params.productListItems.length > 0 && params.cartSessionId
+      ? { productListItems: formatProductListItems(params.productListItems, params.cartSessionId) }
+      : {}),
+    web: {
+      webPageDetails: {
+        server: 'mobileapp',
+        ...(params.pagePath ? { name: makePageName(params.pagePath), URL: params.pagePath } : {}),
+        ...(params.pageTitle || params.pagePath || params.pageType
+          ? {
+              _adobecmteas: {
+                ...(params.pageTitle ? { pageTitle: params.pageTitle } : {}),
+                ...(params.pagePath ? { pagePath: params.pagePath } : {}),
+                ...(params.pageType ? { pageType: params.pageType } : {})
+              }
+            }
+          : {})
+      },
+      webInteraction: {
+        linkClicks: { value: 0 },
+        ...(params.pageTitle ? { name: params.pageTitle.toLowerCase() } : {}),
+        _adobecmteas: {
+          engagement: {
+            transactionType: 'Upper Funnel'
+          }
+        }
+      }
     }
   };
 
@@ -496,14 +587,14 @@ export const buildProductRemovalEvent = async (
   // Build tenant data
   const tenantData: any = {
     authentication: {
-      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'not-logged-in'
     },
     visitorDetails: {
-      visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
+      visitorType: params.profile?.firstName ? 'Customer' : 'Prospect'
     },
     channelInfo: {
       channel: 'Mobile App',
-      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
+      participantName: (params.profile?.firstName || 'prospect').toLowerCase()
     }
   };
 
@@ -530,7 +621,32 @@ export const buildProductRemovalEvent = async (
         value: 1  // Required field
       }
     },
-    
+
+    web: {
+      webPageDetails: {
+        server: 'mobileapp',
+        ...(params.pagePath ? { name: makePageName(params.pagePath), URL: params.pagePath } : {}),
+        ...(params.pageTitle || params.pagePath || params.pageType
+          ? {
+              _adobecmteas: {
+                ...(params.pageTitle ? { pageTitle: params.pageTitle } : {}),
+                ...(params.pagePath ? { pagePath: params.pagePath } : {}),
+                ...(params.pageType ? { pageType: params.pageType } : {})
+              }
+            }
+          : {})
+      },
+      webInteraction: {
+        linkClicks: { value: 0 },
+        ...(params.pageTitle ? { name: params.pageTitle.toLowerCase() } : {}),
+        _adobecmteas: {
+          engagement: {
+            transactionType: 'Upper Funnel'
+          }
+        }
+      }
+    },
+
     productListItems: formatProductListItems(
       params.productListItems,
       params.cartSessionId
@@ -575,14 +691,14 @@ export const buildPurchaseEvent = async (
   // Build tenant data
   const tenantData: any = {
     authentication: {
-      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'not-logged-in'
     },
     visitorDetails: {
-      visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
+      visitorType: params.profile?.firstName ? 'Customer' : 'Prospect'
     },
     channelInfo: {
       channel: 'Mobile App',
-      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
+      participantName: (params.profile?.firstName || 'prospect').toLowerCase()
     }
   };
 
@@ -608,10 +724,16 @@ export const buildPurchaseEvent = async (
       purchases: {
         value: 1  // Required field
       },
+      _adobecmteas: {
+        lowerFunnel: {
+          reviewOrderPage: 1
+        }
+      },
       order: {
         purchaseID: params.purchaseID,
         priceTotal: params.priceTotal,
         currencyCode: params.currencyCode || 'USD',
+        payments: [{ paymentType: 'credit_card' }],
         ...(params.taxAmount !== undefined && params.taxAmount !== null
           ? { taxAmount: params.taxAmount }
           : {})
@@ -626,114 +748,31 @@ export const buildPurchaseEvent = async (
     },
     
     web: {
+      webPageDetails: {
+        server: 'mobileapp',
+        name: 'checkout',
+        URL: '/checkout',
+        _adobecmteas: {
+          pageTitle: 'Checkout',
+          pagePath: '/checkout',
+          pageType: 'checkout'
+        }
+      },
       webInteraction: {
+        linkClicks: { value: 0 },
+        name: 'purchase',
         _adobecmteas: {
           engagement: {
-            transactionType: 'purchase'
+            transactionType: 'Lower Funnel'
           }
         }
       }
     },
-    
+
     productListItems: formatProductListItems(
       params.productListItems,
       params.cartSessionId
     )
-  };
-
-  // Return ExperienceEvent instance (required by Adobe SDK)
-  return new ExperienceEvent({ xdmData });
-};
-
-/**
- * Build product interaction event
- * 
- * Creates XDM-compliant event for cart interactions:
- * - Add to cart
- * - Remove from cart
- * - Update quantity (increase/decrease)
- * 
- * @param params - Product interaction parameters
- * @returns XDM event object ready for Edge.sendEvent()
- * 
- * @example
- * const event = await buildProductInteractionEvent({
- *   identityMap: await Identity.getIdentities(),
- *   profile: { firstName: 'John' },
- *   transactionType: 'remove_from_cart',
- *   productListItems: [removedItem],
- *   cartSessionId: 'cart-123-abc'
- * });
- * await Edge.sendEvent(event);
- */
-export const buildProductInteractionEvent = async (
-  params: ProductInteractionParams
-): Promise<any> => {
-  const ecid = extractECID(params.identityMap);
-  const identities = await buildTenantIdentities({
-    ecid,
-    email: params.profile?.email,
-    phone: params.profile?.phone
-  });
-
-  // Determine eventType based on transaction type
-  let eventType = 'commerce.productListUpdates';
-  const commerceField: any = {};
-  
-  if (params.transactionType === 'remove_from_cart') {
-    eventType = 'commerce.productListRemovals';
-    commerceField.productListRemovals = { value: 1 };
-  } else {
-    commerceField.productListUpdates = { value: 1 };
-  }
-
-  // Build tenant data
-  const tenantData: any = {
-    authentication: {
-      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
-    },
-    visitorDetails: {
-      visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
-    },
-    channelInfo: {
-      channel: 'Mobile App',
-      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
-    }
-  };
-
-  // Only add identities if we have data
-  if (identities && Object.keys(identities).length > 0) {
-    tenantData.identities = identities;
-  }
-
-  // Generate unique event ID (required by ExperienceEvent schema)
-  const eventId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-
-  const xdmData: any = {
-    _id: eventId,  // Required field
-    eventType,
-    timestamp: new Date().toISOString(),
-    identityMap: params.identityMap,
-    
-    _adobecmteas: tenantData,
-    
-    environment: buildEnvironment(),  // Device/platform context
-    
-    commerce: commerceField,
-    
-    web: {
-      webInteraction: {
-        _adobecmteas: {
-          engagement: {
-            transactionType: params.transactionType
-          }
-        }
-      }
-    },
-    
-    productListItems: params.cartSessionId 
-      ? formatProductListItems(params.productListItems, params.cartSessionId)
-      : params.productListItems
   };
 
   // Return ExperienceEvent instance (required by Adobe SDK)
@@ -746,7 +785,7 @@ export const buildProductInteractionEvent = async (
  * Creates XDM-compliant login event with:
  * - Authentication status (signInSuccess or signInFailure)
  * - Updated identity fields
- * - Visitor type change (Guest → Customer)
+ * - Visitor type change (Prospect → Customer)
  * 
  * @param params - Login parameters
  * @returns XDM event object ready for Edge.sendEvent()
@@ -782,16 +821,17 @@ export const buildLoginEvent = async (
     _adobecmteas: {
       identities,
       authentication: {
-        ...(params.success && { signInSuccess: 1 }),
+        ...(params.registration && params.success && { registrationSuccess: 1 }),
+        ...(params.success && !params.registration && { signInSuccess: 1 }),
         ...(!params.success && { signInFailure: 1 }),
         loginStatus: params.success ? 'logged-in' : 'login-failed'
       },
       visitorDetails: {
-        visitorType: params.success ? 'Customer' : 'Guest'
+        visitorType: params.success ? 'Customer' : 'Prospect'
       },
       channelInfo: {
         channel: 'Mobile App',
-        participantName: (params.profile?.firstName || 'guest user').toLowerCase()
+        participantName: (params.profile?.firstName || 'prospect').toLowerCase()
       }
     },
     
@@ -799,6 +839,9 @@ export const buildLoginEvent = async (
     
     web: {
       webPageDetails: {
+        server: 'mobileapp',
+        name: 'profile',
+        URL: '/profile',
         _adobecmteas: {
           pageTitle: 'Profile',
           pagePath: '/profile',
@@ -809,9 +852,10 @@ export const buildLoginEvent = async (
         linkClicks: {
           value: 1  // Required field for mobileApp.navigation.clicks eventType
         },
+        name: 'profile',
         _adobecmteas: {
           engagement: {
-            transactionType: params.success ? 'login_success' : 'login_failure'
+            transactionType: 'Authentication'
           }
         }
       }
@@ -828,7 +872,7 @@ export const buildLoginEvent = async (
  * Creates XDM-compliant logout event with:
  * - Authentication status (loggoffSuccess)
  * - Updated login status (logged_out)
- * - Visitor type change (Customer → Guest)
+ * - Visitor type change (Customer → Prospect)
  * 
  * @param params - Logout parameters
  * @returns XDM event object ready for Edge.sendEvent()
@@ -866,18 +910,21 @@ export const buildLogoutEvent = async (
         loginStatus: 'logged-out'
       },
       visitorDetails: {
-        visitorType: 'Guest'
+        visitorType: 'Prospect'
       },
       channelInfo: {
         channel: 'Mobile App',
-        participantName: 'guest user'
+        participantName: params.profile?.firstName || 'prospect'
       }
     },
-    
+
     environment: buildEnvironment(),  // Device/platform context
     
     web: {
       webPageDetails: {
+        server: 'mobileapp',
+        name: 'profile',
+        URL: '/profile',
         _adobecmteas: {
           pageTitle: 'Profile',
           pagePath: '/profile',
@@ -888,9 +935,10 @@ export const buildLogoutEvent = async (
         linkClicks: {
           value: 1  // Required field for mobileApp.navigation.clicks eventType
         },
+        name: 'profile',
         _adobecmteas: {
           engagement: {
-            transactionType: 'logout'
+            transactionType: 'Authentication'
           }
         }
       }
@@ -931,14 +979,14 @@ export const buildProductViewEvent = async (
   // Build tenant data
   const tenantData: any = {
     authentication: {
-      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'not-logged-in'
     },
     visitorDetails: {
-      visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
+      visitorType: params.profile?.firstName ? 'Customer' : 'Prospect'
     },
     channelInfo: {
       channel: 'Mobile App',
-      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
+      participantName: (params.profile?.firstName || 'prospect').toLowerCase()
     }
   };
 
@@ -965,20 +1013,52 @@ export const buildProductViewEvent = async (
         value: 1  // Required field
       }
     },
-    
-    productListItems: [
-      {
+
+    web: {
+      webPageDetails: {
+        server: 'mobileapp',
+        ...(params.pagePath ? { name: makePageName(params.pagePath), URL: params.pagePath } : {}),
+        ...(params.pageTitle || params.pagePath || params.pageType
+          ? {
+              _adobecmteas: {
+                ...(params.pageTitle ? { pageTitle: params.pageTitle } : {}),
+                ...(params.pagePath ? { pagePath: params.pagePath } : {}),
+                ...(params.pageType ? { pageType: params.pageType } : {})
+              }
+            }
+          : {})
+      },
+      webInteraction: {
+        linkClicks: { value: 0 },
+        name: params.product.name.toLowerCase(),
+        _adobecmteas: {
+          engagement: {
+            transactionType: 'Upper Funnel'
+          }
+        }
+      }
+    },
+
+    productListItems: (() => {
+      const categories: { categoryID: string; categoryName: string }[] = [
+        { categoryID: 'primaryCategory', categoryName: params.product.category || 'unknown' },
+      ];
+      if (params.product.secondaryCategory) {
+        categories.push({ categoryID: 'secondaryCategory', categoryName: params.product.secondaryCategory });
+      }
+      return [{
         SKU: params.product.sku,
         name: params.product.name,
         priceTotal: params.product.price,
         quantity: 1,
+        productCategories: categories,
         _adobecmteas: {
           products: {
             unitPrice: params.product.price
           }
         }
-      }
-    ]
+      }];
+    })()
   };
 
   // Return ExperienceEvent instance (required by Adobe SDK)
@@ -1016,14 +1096,14 @@ export const buildProductListAddEvent = async (
   // Build tenant data
   const tenantData: any = {
     authentication: {
-      loginStatus: params.profile?.firstName ? 'logged-in' : 'guest'
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'not-logged-in'
     },
     visitorDetails: {
-      visitorType: params.profile?.firstName ? 'Customer' : 'Guest'
+      visitorType: params.profile?.firstName ? 'Customer' : 'Prospect'
     },
     channelInfo: {
       channel: 'Mobile App',
-      participantName: (params.profile?.firstName || 'guest user').toLowerCase()
+      participantName: (params.profile?.firstName || 'prospect').toLowerCase()
     }
   };
 
@@ -1050,23 +1130,45 @@ export const buildProductListAddEvent = async (
         value: 1  // Required field
       }
     },
-    
+
     web: {
+      webPageDetails: {
+        server: 'mobileapp',
+        ...(params.pagePath ? { name: makePageName(params.pagePath), URL: params.pagePath } : {}),
+        ...(params.pageTitle || params.pagePath || params.pageType
+          ? {
+              _adobecmteas: {
+                ...(params.pageTitle ? { pageTitle: params.pageTitle } : {}),
+                ...(params.pagePath ? { pagePath: params.pagePath } : {}),
+                ...(params.pageType ? { pageType: params.pageType } : {})
+              }
+            }
+          : {})
+      },
       webInteraction: {
+        linkClicks: { value: 0 },
+        name: params.product.name.toLowerCase(),
         _adobecmteas: {
           engagement: {
-            transactionType: 'add_to_cart'
+            transactionType: 'Upper Funnel'
           }
         }
       }
     },
-    
-    productListItems: [
-      {
+
+    productListItems: (() => {
+      const categories: { categoryID: string; categoryName: string }[] = [
+        { categoryID: 'primaryCategory', categoryName: params.product.category || 'unknown' },
+      ];
+      if (params.product.secondaryCategory) {
+        categories.push({ categoryID: 'secondaryCategory', categoryName: params.product.secondaryCategory });
+      }
+      return [{
         SKU: params.product.sku,
         name: params.product.name,
         priceTotal: params.product.price,
         quantity: params.product.quantity || 1,
+        productCategories: categories,
         _adobecmteas: {
           lowerFunnel: {
             cartID: params.cartSessionId
@@ -1075,11 +1177,261 @@ export const buildProductListAddEvent = async (
             unitPrice: params.product.price
           }
         }
-      }
-    ]
+      }];
+    })()
   };
 
   // Return ExperienceEvent instance (required by Adobe SDK)
   return new ExperienceEvent({ xdmData });
+};
+
+/**
+ * Build push tracking event
+ *
+ * Creates a fully-compliant XDM push tracking event that includes
+ * the required _adobecmteas tenant block. Replaces the previous
+ * inline hand-rolled payload in _layout.tsx which omitted the tenant block.
+ */
+export const buildPushTrackingEvent = async (
+  params: PushTrackingEventParams
+): Promise<any> => {
+  const ecid = extractECID(params.identityMap);
+  const identities = await buildTenantIdentities({
+    ecid,
+    email: params.profile?.email,
+    phone: params.profile?.phone
+  });
+
+  const tenantData: any = {
+    authentication: {
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'not-logged-in'
+    },
+    visitorDetails: {
+      visitorType: params.profile?.firstName ? 'Customer' : 'Prospect'
+    },
+    channelInfo: {
+      channel: 'Mobile App',
+      participantName: (params.profile?.firstName || 'prospect').toLowerCase()
+    }
+  };
+  if (identities && Object.keys(identities).length > 0) {
+    tenantData.identities = identities;
+  }
+
+  const eventId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+
+  const xdmData: any = {
+    _id: eventId,
+    eventType: params.interaction === 'opened'
+      ? 'pushTracking.applicationOpened'
+      : 'pushTracking.customAction',
+    timestamp: new Date().toISOString(),
+    identityMap: params.identityMap,
+    _adobecmteas: tenantData,
+    environment: buildEnvironment(),
+    pushNotificationTracking: {
+      pushProvider: params.pushProvider,
+      pushProviderMessageID: params.pushProviderMessageID,
+      ...(params.interaction === 'customAction' && params.actionID
+        ? { customAction: { actionID: params.actionID } }
+        : {})
+    }
+  };
+
+  if (params.correlationID) {
+    xdmData._experience = {
+      decisioning: {
+        propositions: [{
+          scopeDetails: {
+            correlationID: params.correlationID
+          }
+        }]
+      }
+    };
+  }
+
+  return new ExperienceEvent({ xdmData });
+};
+
+/**
+ * Build push registration event.
+ *
+ * Companion to MobileCore.setPushIdentifier(). setPushIdentifier targets the
+ * AJO Push Profile Dataset using Adobe's OOTB push profile schema, which carries
+ * only identityMap.ECID — it does NOT include the _adobecmteas tenant block.
+ * The davidMobileInteractions schema declares _adobecmteas.identities.ecid as
+ * the primary identity descriptor, so without this companion event the
+ * registration is invisible to any tenant-scoped journey qualification or
+ * profile stitching that depends on the tenant ECID.
+ *
+ * Fire this from registerTokenWithAdobe immediately after setPushIdentifier
+ * succeeds. The token value itself is not echoed into the payload — token
+ * storage is owned by AJO via setPushIdentifier; this event exists purely to
+ * stamp the registration moment in the tenant dataset with the required
+ * identity descriptor satisfied.
+ */
+export const buildPushRegistrationEvent = async (
+  params: PushRegistrationEventParams
+): Promise<any> => {
+  const ecid = extractECID(params.identityMap);
+  const identities = await buildTenantIdentities({
+    ecid,
+    email: params.profile?.email,
+    phone: params.profile?.phone
+  });
+
+  const tenantData: any = {
+    authentication: {
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'not-logged-in'
+    },
+    visitorDetails: {
+      visitorType: params.profile?.firstName ? 'Customer' : 'Prospect'
+    },
+    channelInfo: {
+      channel: 'Mobile App',
+      participantName: (params.profile?.firstName || 'prospect').toLowerCase()
+    }
+  };
+  if (identities && Object.keys(identities).length > 0) {
+    tenantData.identities = identities;
+  }
+
+  const eventId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+
+  const xdmData: any = {
+    _id: eventId,
+    eventType: 'pushNotificationDetails',
+    timestamp: new Date().toISOString(),
+    identityMap: params.identityMap,
+    _adobecmteas: tenantData,
+    environment: buildEnvironment(),
+    pushNotificationTracking: {
+      pushProvider: params.pushProvider
+    }
+  };
+
+  return new ExperienceEvent({ xdmData });
+};
+
+// ============================================================================
+// PROPOSITION TRACKING (AJO Code-Based Experiences)
+// ============================================================================
+
+/**
+ * Shared internal builder for both display and interact proposition events.
+ *
+ * Wraps the partial XDM map returned by Optimize's generateDisplayInteractionXdm
+ * / generateTapInteractionXdm (which contains eventType + _experience.decisioning)
+ * with the envelope required by the davidMobileInteractions schema: _adobecmteas
+ * tenant block (with identities.ecid — the schema's primary identity descriptor),
+ * identityMap, timestamp, environment, _id.
+ *
+ * Without this envelope the streaming validator rejects the event with
+ * DCVS-1106-400: required key [_adobecmteas] not found.
+ */
+const buildPropositionEvent = async (
+  params: PropositionTrackingEventParams
+): Promise<any> => {
+  const ecid = extractECID(params.identityMap);
+  const identities = await buildTenantIdentities({
+    ecid,
+    email: params.profile?.email,
+    phone: params.profile?.phone
+  });
+
+  const tenantData: any = {
+    authentication: {
+      loginStatus: params.profile?.firstName ? 'logged-in' : 'not-logged-in'
+    },
+    visitorDetails: {
+      visitorType: params.profile?.firstName ? 'Customer' : 'Prospect'
+    },
+    channelInfo: {
+      channel: 'Mobile App',
+      participantName: (params.profile?.firstName || 'prospect').toLowerCase()
+    }
+  };
+  if (identities && Object.keys(identities).length > 0) {
+    tenantData.identities = identities;
+  }
+
+  // Optimize returns a Map on iOS and a plain object on Android; normalize.
+  const partial: any =
+    params.generatedXdm && typeof (params.generatedXdm as any).get === 'function'
+      ? Object.fromEntries((params.generatedXdm as Map<string, any>).entries())
+      : params.generatedXdm || {};
+
+  // Deep-clone the _experience block so we can safely overlay embedded-item tokens
+  // and propositionAction.label without mutating the SDK's returned map.
+  const experience = partial._experience
+    ? JSON.parse(JSON.stringify(partial._experience))
+    : { decisioning: { propositions: [] } };
+
+  if (params.embeddedItem && experience?.decisioning?.propositions?.[0]) {
+    experience.decisioning.propositions[0].items = [
+      { id: params.embeddedItem.id, trackingToken: params.embeddedItem.trackingToken }
+    ];
+  }
+
+  if (params.interaction && experience?.decisioning) {
+    experience.decisioning.propositionAction = { label: params.interaction };
+  }
+
+  const eventId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+
+  const xdmData: any = {
+    _id: eventId,
+    eventType: partial.eventType,
+    timestamp: new Date().toISOString(),
+    identityMap: params.identityMap,
+    _adobecmteas: tenantData,
+    environment: buildEnvironment(),
+    _experience: experience
+  };
+
+  return new ExperienceEvent({ xdmData });
+};
+
+/**
+ * Build proposition display event (decisioning.propositionDisplay).
+ *
+ * @param params - Partial XDM from offer.generateDisplayInteractionXdm + identity/profile
+ * @returns ExperienceEvent ready for Edge.sendEvent()
+ *
+ * @example
+ * const partial = await offer.generateDisplayInteractionXdm(proposition);
+ * const event = await buildPropositionDisplayEvent({
+ *   generatedXdm: partial,
+ *   identityMap: await Identity.getIdentities(),
+ *   profile: getProfile(),
+ * });
+ * await Edge.sendEvent(event);
+ */
+export const buildPropositionDisplayEvent = async (
+  params: PropositionTrackingEventParams
+): Promise<any> => {
+  return buildPropositionEvent({ ...params, interaction: undefined });
+};
+
+/**
+ * Build proposition interact event (decisioning.propositionInteract).
+ *
+ * @param params - Partial XDM from offer.generateTapInteractionXdm + identity/profile + interaction label
+ * @returns ExperienceEvent ready for Edge.sendEvent()
+ *
+ * @example
+ * const partial = await offer.generateTapInteractionXdm(proposition);
+ * const event = await buildPropositionInteractEvent({
+ *   generatedXdm: partial,
+ *   identityMap: await Identity.getIdentities(),
+ *   profile: getProfile(),
+ *   interaction: 'click',
+ * });
+ * await Edge.sendEvent(event);
+ */
+export const buildPropositionInteractEvent = async (
+  params: PropositionTrackingEventParams
+): Promise<any> => {
+  return buildPropositionEvent(params);
 };
 

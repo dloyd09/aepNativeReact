@@ -11,8 +11,7 @@ import { Edge } from '@adobe/react-native-aepedge';
 import { Identity } from '@adobe/react-native-aepedgeidentity';
 import { Messaging } from '@adobe/react-native-aepmessaging';
 import { useCart } from '../../components/CartContext';
-import { useProfileStorage } from '../../hooks/useProfileStorage';
-import { useCartSession } from '../../hooks/useCartSession';
+import { useProfile } from '../../components/ProfileContext';
 import { buildPageViewEvent, buildPurchaseEvent } from '../../src/utils/xdmEventBuilders';
 import { refreshDecisioningSurfaceFromStoredConfig } from '../../src/utils/decisioningItems';
 
@@ -27,12 +26,12 @@ export default function Checkout() {
   const [showConfetti, setShowConfetti] = React.useState(false);
   const [firstName, setFirstName] = useState('');
   const [email, setEmail] = useState('');
-  const { clearCart, cart } = useCart();
-  const { profile, isProfileLoading } = useProfileStorage();
-  const { cartSessionId, isLoading: isCartSessionLoading, resetCartSession } = useCartSession();
+  const { clearCart, cart, cartSessionId, isCartSessionLoading, resetCartSession } = useCart();
+  const { profile, isProfileLoading, getProfile } = useProfile();
   
   const [identityMap, setIdentityMap] = useState({});
-  const [purchaseInProgress, setPurchaseInProgress] = useState(false); // Prevent duplicate page views after purchase
+  const [purchaseInProgress, setPurchaseInProgress] = useState(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const purchaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // item 11.2: clear the post-purchase navigation timer if the component unmounts
@@ -49,71 +48,49 @@ export default function Checkout() {
     [cart]
   );
 
-  // Fetch Identity Map on mount. On cold start the SDK may not be ready yet — catch
-  // the rejection and leave identityMap as the empty default. The useFocusEffect below
-  // already guards on identityMap before sending any event, so this is safe.
-  useEffect(() => {
-    Identity.getIdentities()
-      .then((result) => {
-        if (result && result.identityMap) {
-          setIdentityMap(result.identityMap);
-        } else {
-          setIdentityMap(result);
-        }
-      })
-      .catch((err) =>
-        console.warn('[Checkout] Identity.getIdentities() failed on mount — SDK may not be ready yet:', err)
-      );
+  const refreshIdentityMap = useCallback(async () => {
+    try {
+      const result = await Identity.getIdentities();
+      const map = (result && (result as any).identityMap) ? (result as any).identityMap : result;
+      setIdentityMap(map ?? {});
+      return map ?? {};
+    } catch (err) {
+      console.warn('[Checkout] Identity.getIdentities() failed:', err);
+      return null;
+    }
   }, []);
 
-  // Send page view when screen comes into focus
+  // Initial fetch on mount; also re-fetched on every focus below.
+  useEffect(() => { refreshIdentityMap(); }, [refreshIdentityMap]);
+
+  // Send page view when screen comes into focus, using a fresh identity fetch each time.
   useFocusEffect(
     useCallback(() => {
       const handleFocus = async () => {
-        // Don't send page view if purchase is in progress (prevents duplicate after cart session reset)
-        if (purchaseInProgress) {
-          console.log('Checkout - Purchase in progress, skipping page view');
+        if (purchaseInProgress) return;
+        if (isProfileLoading) return;
+        if (isCartSessionLoading || !cartSessionId) return;
+
+        const liveIdentityMap = await refreshIdentityMap();
+        if (!liveIdentityMap || Object.keys(liveIdentityMap).length === 0) {
+          console.log('[Checkout] IdentityMap not ready, skipping page view');
           return;
         }
 
-        // Wait for the profile AsyncStorage read to complete before sending — avoids
-        // empty-identity XDM events on cold start while the hook is still loading.
-        if (isProfileLoading) {
-          console.log('Checkout - Profile not yet loaded from storage, skipping page view');
-          return;
-        }
-
-        // Check prerequisites
-        if (isCartSessionLoading || !cartSessionId) {
-          console.log('Checkout - Cart session not ready, skipping page view');
-          return;
-        }
-
-        if (!identityMap || Object.keys(identityMap).length === 0) {
-          console.log('Checkout - IdentityMap not ready, skipping page view');
-          return;
-        }
-
-        // Send page view
         try {
           const pageViewEvent = await buildPageViewEvent({
-            identityMap,
-            profile,
+            identityMap: liveIdentityMap,
+            profile: getProfile(),
             pageTitle: 'Checkout',
             pagePath: '/checkout',
             pageType: 'checkout',
-            productListItems: modifiedCart,
-            cartSessionId
           });
-
           console.log('📤 Sending checkout page view event');
           await Edge.sendEvent(pageViewEvent);
-          
-          console.log('✅ Checkout page view sent successfully:', {
+          console.log('✅ Checkout page view sent:', {
             itemCount: modifiedCart.length,
-            totalValue: modifiedCart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2),
             cartSessionId,
-            participantName: profile?.firstName || 'Guest User'
+            participantName: profile?.firstName || 'Prospect'
           });
         } catch (error) {
           console.error('❌ Error sending checkout page view:', error);
@@ -121,7 +98,7 @@ export default function Checkout() {
       };
 
       handleFocus();
-    }, [modifiedCart, identityMap, cartSessionId, isCartSessionLoading, purchaseInProgress, isProfileLoading])
+    }, [modifiedCart, refreshIdentityMap, cartSessionId, isCartSessionLoading, purchaseInProgress, isProfileLoading, profile, getProfile])
   );
 
   useEffect(() => {
@@ -132,9 +109,10 @@ export default function Checkout() {
   }, [profile]);
 
   const handlePayment = async () => {
-    // Set flag to prevent duplicate page views during purchase flow
     setPurchaseInProgress(true);
-    
+    setPurchaseError(null);
+
+    // --- Purchase event (must succeed before anything else) ---
     try {
       const subtotal = parseFloat(
         cart.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2)
@@ -143,12 +121,23 @@ export default function Checkout() {
       const shippingAmount = DEMO_SHIPPING_USD;
       const totalAmount = parseFloat((subtotal + shippingAmount + taxAmount).toFixed(2));
 
-      // Send purchase event
       const purchaseID = `order-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-      
+
+      // Re-fetch identity right before sending — state may be stale.
+      const liveIdentityMap = await refreshIdentityMap();
+      if (!liveIdentityMap || Object.keys(liveIdentityMap).length === 0) {
+        console.warn('[Checkout] Purchase blocked: identityMap empty. Check App ID configuration.');
+        setPurchaseError('Adobe SDK identity not ready. Verify App ID is configured, then try again.');
+        setPurchaseInProgress(false);
+        return;
+      }
+
+      // Read latest profile synchronously — closure-captured `profile` can be
+      // stale right after login, stamping the purchase as Prospect.
+      const livePurchaseProfile = getProfile();
       const purchaseEvent = await buildPurchaseEvent({
-        identityMap,
-        profile,
+        identityMap: liveIdentityMap,
+        profile: livePurchaseProfile,
         purchaseID,
         cartSessionId: cartSessionId || 'unknown',
         productListItems: modifiedCart,
@@ -160,47 +149,41 @@ export default function Checkout() {
 
       console.log('📤 Sending purchase event');
       await Edge.sendEvent(purchaseEvent);
-      
-      console.log('✅ Purchase event sent successfully:', {
+      console.log('✅ Purchase event sent:', {
         purchaseID,
         itemCount: modifiedCart.length,
         totalAmount,
         cartSessionId,
-        participantName: profile?.firstName || 'Guest User'
+        participantName: livePurchaseProfile?.firstName || 'Prospect'
       });
+    } catch (error) {
+      console.error('[Checkout] Purchase event failed:', error);
+      setPurchaseError('Payment failed — see Metro console for details.');
+      setPurchaseInProgress(false);
+      return;
+    }
 
-      // Refresh in-app messages after purchase (to fetch any triggered messages)
-      console.log('🔄 Refreshing in-app messages...');
+    // --- Post-purchase side effects (failures here do NOT un-do the purchase) ---
+    try {
+      console.log('🔄 Refreshing in-app messages after purchase...');
       await Messaging.refreshInAppMessages();
       const refreshedSurface = await refreshDecisioningSurfaceFromStoredConfig();
       if (refreshedSurface) {
         console.log('Decisioning surface refreshed after purchase:', refreshedSurface);
-      } else {
-        console.log('No decisioning surface configured for post-purchase refresh');
       }
-      console.log('✅ In-app messages refreshed');
-
-      // Reset cart session after purchase
-      await resetCartSession();
-      console.log('🔄 Cart session reset after purchase');
-
-      // Show confetti and navigate
-      setShowConfetti(true);
-      
-      // Clear cart immediately (before navigation)
-      clearCart();
-      
-      purchaseTimerRef.current = setTimeout(() => {
-        setPurchaseInProgress(false); // Reset flag before navigation
-        setShowConfetti(false);
-        router.replace('/home');
-      }, 3000);
-      
-    } catch (error) {
-      console.error('❌ Error in payment flow:', error);
-      setPurchaseInProgress(false); // Reset on error so user can retry
-      // Optionally show an error alert to user
+    } catch (sideEffectError) {
+      console.warn('[Checkout] Post-purchase refresh failed (non-fatal):', sideEffectError);
     }
+
+    await resetCartSession();
+    clearCart();
+    setShowConfetti(true);
+
+    purchaseTimerRef.current = setTimeout(() => {
+      setPurchaseInProgress(false);
+      setShowConfetti(false);
+      router.replace('/home');
+    }, 3000);
   };
 
   return (
@@ -229,14 +212,14 @@ export default function Checkout() {
           <ThemedText style={styles.paymentInfoText}>Expiry Date: 12/34</ThemedText>
           <ThemedText style={styles.paymentInfoText}>CVV: 007</ThemedText>
         </View>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[
-            styles.button, 
-            { 
+            styles.button,
+            {
               backgroundColor: purchaseInProgress ? colors.border : colors.primary,
               opacity: purchaseInProgress ? 0.6 : 1
             }
-          ]} 
+          ]}
           onPress={handlePayment}
           disabled={purchaseInProgress}
         >
@@ -244,6 +227,11 @@ export default function Checkout() {
             {purchaseInProgress ? 'Processing Payment...' : 'Pay Now'}
           </ThemedText>
         </TouchableOpacity>
+        {purchaseError && (
+          <ThemedText style={{ color: 'red', marginTop: 8, textAlign: 'center', fontSize: 13 }}>
+            {purchaseError}
+          </ThemedText>
+        )}
         </ScrollableContainer>
         {showConfetti && <ConfettiCannon count={200} origin={{x: -10, y: 0}} fadeOut={true} />}
       </ThemedView>

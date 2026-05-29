@@ -10,7 +10,7 @@ import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import productsData from '../productData/bootcamp_products.json';
 import { buildPageViewEvent } from '../../src/utils/xdmEventBuilders';
-import { useProfileStorage } from '../../hooks/useProfileStorage';
+import { useProfile } from '../../components/ProfileContext';
 import { isAdobeConfigured } from '../../src/utils/adobeConfig';
 
 // Extract unique categories from the JSON data
@@ -41,7 +41,7 @@ export default function HomeTab() {
   const router = useRouter();
   const { colors } = useTheme();
   
-  const { profile, isProfileLoading } = useProfileStorage();
+  const { isProfileLoading, getProfile } = useProfile();
   const [identityMap, setIdentityMap] = useState({});
   const refreshIdentityMap = useCallback(async () => {
     if (!(await isAdobeConfigured())) {
@@ -78,8 +78,6 @@ export default function HomeTab() {
           return;
         }
 
-        // Wait for the profile AsyncStorage read to complete before sending — avoids
-        // empty-identity XDM events on cold start while the hook is still loading.
         if (isProfileLoading) {
           console.log('Home - Profile not yet loaded from storage, skipping page view');
           return;
@@ -89,7 +87,7 @@ export default function HomeTab() {
         try {
           const pageViewEvent = await buildPageViewEvent({
             identityMap: currentIdentityMap,
-            profile,
+            profile: getProfile(),
             pageTitle: 'Home',
             pagePath: '/home',
             pageType: 'home',

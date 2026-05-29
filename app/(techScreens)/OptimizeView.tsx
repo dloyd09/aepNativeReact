@@ -168,18 +168,6 @@ export default function OptimizeView() {
             if (prop) {
               console.log("🔵 Proposition content:", JSON.stringify(prop, null, 2));
               setProposition(prop);
-              
-              // Call offer.displayed() to track that the offer was shown (Adobe best practice)
-              try {
-                if (prop.items && prop.items.length > 0) {
-                  const item = prop.items[0];
-                  console.log("🔵 Calling offer.displayed() for item:", item.id);
-                  item.displayed(prop);
-                  console.log("🔵 ✅ offer.displayed() called successfully");
-                }
-              } catch (displayError) {
-                console.error("🔴 Error calling offer.displayed():", displayError);
-              }
             } else {
               console.log("🔴 Proposition is undefined for scope:", scopeName);
               setProposition(null);
@@ -311,21 +299,7 @@ export default function OptimizeView() {
     if (prop) {
       console.log("🔵 Step 3: Found proposition, setting state...");
       setProposition(prop);
-      
-      // Call offer.displayed() to track that the offer was shown (Adobe best practice)
-      try {
-        if (prop.items && prop.items.length > 0) {
-          const item = prop.items[0];
-          console.log("🔵 Calling offer.displayed() for item:", item.id);
-          item.displayed(prop);
-          console.log("🔵 ✅ offer.displayed() called successfully");
-        }
-      } catch (displayError) {
-        console.error("🔴 Error calling offer.displayed():", displayError);
-      }
-      
-      console.log("🔵 ✅ Proposition set successfully and offer.displayed() called.");
-      
+      console.log("🔵 ✅ Proposition set successfully.");
       Alert.alert("Success", "Got proposition from cache successfully.");
     } else {
       console.log("🔴 No proposition found in cache for scope:", scope.getName());

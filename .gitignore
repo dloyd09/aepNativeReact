@@ -1,6 +1,8 @@
 # Node modules
 node_modules/
 
+android/build/
+
 # Expo
 .expo/
 .expo-shared/
@@ -51,6 +53,7 @@ Thumbs.db
 *.orig.*
 *.log
 .env
+.assurance-events.json
 feedback.json
 crashlog.crash
 

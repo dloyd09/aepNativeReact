@@ -10,11 +10,12 @@ import { Target } from '@adobe/react-native-aeptarget';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@react-navigation/native';
 import Constants from 'expo-constants';
+import * as Device from 'expo-device';
 import { TechnicalScreen } from '../../components/TechnicalScreen';
 import { ThemedText } from '../../components/ThemedText';
 import styles from '../../styles/styles';
 import { getStoredAppId, APP_ID_STORAGE_KEY, resetAdobeInitState } from '../../src/utils/adobeConfig';
-import { pushNotificationService } from '../../src/utils/pushNotifications';
+import { pushNotificationService, isMockToken } from '../../src/utils/pushNotifications';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,10 +38,6 @@ type SetupStatus = {
 function truncateToken(token: string): string {
   if (token.length <= 20) return token;
   return `${token.substring(0, 8)}…${token.substring(token.length - 8)}`;
-}
-
-function isMockToken(token: string): boolean {
-  return token.startsWith('MockToken_') || token.startsWith('AndroidMockToken_');
 }
 
 // item 1.1: status dot logic per row
@@ -165,9 +162,12 @@ const CoreView = () => {
       const tokenIsMock = rawToken ? isMockToken(rawToken) : false;
       let pushTokenDisplay: string;
       if (!rawToken) {
-        pushTokenDisplay = 'Not registered';
+        // The app no longer fabricates placeholder tokens, so a missing token means
+        // push genuinely isn't available here — be explicit about why.
+        pushTokenDisplay = Device.isDevice ? 'Not registered' : 'Unavailable — physical device required';
       } else if (tokenIsMock) {
-        pushTokenDisplay = `Simulator — ${truncateToken(rawToken)}`;
+        // Defensive: should not occur now that fabrication is removed, but flag any legacy value.
+        pushTokenDisplay = `Mock (ignored) — ${truncateToken(rawToken)}`;
       } else {
         pushTokenDisplay = truncateToken(rawToken);
       }
@@ -232,15 +232,7 @@ const CoreView = () => {
               try { await MobileCore.setPushIdentifier(''); } catch { /* best-effort */ }
               console.log('[Reset] Push identifier cleared');
 
-              // 4. Clear pending push token (prevents pre-reset token re-registering)
-              pushNotificationService.clearPendingToken();
-              console.log('[Reset] Pending push token cleared');
-
-              // 5. Clear user profile from AsyncStorage
-              await AsyncStorage.removeItem('userProfile');
-              console.log('[Reset] User profile cleared');
-
-              // 6. Clear Optimize cached propositions
+              // 5. Clear Optimize cached propositions
               try { Optimize.clearCachedPropositions(); } catch { /* best-effort */ }
               console.log('[Reset] Optimize cache cleared');
 

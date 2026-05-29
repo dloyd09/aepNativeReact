@@ -1,6 +1,6 @@
 # Automated Checks for QA Use Cases
 
-This document describes how to run automated checks that verify the app behavior described in [QA-Use-Cases-Review.md](QA-Use-Cases-Review.md), and what remains manual.
+This document describes what the Jest test suite covers for event-shape validation, and what remains manual.
 
 ## How to run automated checks
 
@@ -24,14 +24,14 @@ npm test
 | QA use case | What is automated | What is still manual |
 |-------------|-------------------|----------------------|
 | **1. Call Center Push (Bounced)** | — | Token registration flow, AJO channel config, identity/profile. Use Assurance + device testing. |
-| **2. Purchase In-App Journey** | `buildPurchaseEvent()` produces `eventType: 'commerce.purchases'`, `_adobecmteas`, `commerce.order`, `productListItems`, and engagement `transactionType: 'purchase'`. | Journey entrance conditions in AJO, in-app vs CBE channel, timing of `refreshInAppMessages()` / surface refresh. Use Assurance + AJO. |
+| **2. Purchase In-App Journey** | `buildPurchaseEvent()` produces `eventType: 'commerce.purchases'`, `_adobecmteas`, `commerce.order`, `productListItems`, and engagement `transactionType: 'Lower Funnel'`. | Journey entrance conditions in AJO, in-app vs CBE channel, timing of `refreshInAppMessages()` / surface refresh. Use Assurance + AJO. |
 | **3. Cart Views in CJA** | `buildPageViewEvent()` with cart params produces `eventType: 'mobileApp.navigation.pageViews'`, `pageType: 'cart'`, `pagePath: '/cart'`, and correct `web.webPageDetails` / `_adobecmteas`. | CJA Data View and “Cart Views” metric definition, dataset/connection, report filters. Use Assurance + CJA. |
 | **4. Decisioning (wonky)** | — | Surface name match with AJO, cache vs server behavior, content parsing, refresh after purchase. Use Assurance + app flows. |
 
 ## Summary
 
 - **Automated:** Purchase and Cart **event payload shape** (use cases 2 and 3). Run `npm run test:ci` before releases or after changing `xdmEventBuilders.ts` or `identityHelpers.ts`.
-- **Manual:** Push registration, journey/channel configuration, CJA metric definitions, decisioning surfaces and refresh behavior (use cases 1 and 4, plus config/UX for 2 and 3). Follow [Fix-And-Test-Adjustment-Plan.md](Fix-And-Test-Adjustment-Plan.md) for device and Assurance flows.
+- **Manual:** Push registration, journey/channel configuration, CJA metric definitions, decisioning surfaces and refresh behavior. See [Assurance-Validation-Report.md](Assurance-Validation-Report.md) for current device and Assurance flow guidance.
 
 ## Adding more automated checks
 

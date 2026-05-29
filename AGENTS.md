@@ -78,13 +78,18 @@ Available builders (all in `src/utils/xdmEventBuilders.ts`):
 
 ## Push registration pattern
 
-The correct registration sequence (items 4.2 + 4.6 in the optimization plan):
+The correct registration sequence:
 
-1. Obtain platform token (APNs on iOS, FCM on Android)
-2. Fetch ECID via `Identity.getExperienceCloudId()`
-3. If ECID is present → `MobileCore.setPushIdentifier(token)`
-4. If ECID is absent → store as `pendingPushToken`, do NOT call `setPushIdentifier`
-5. After `configureAdobe()` completes or after login → call `retryPendingPushToken()`
+1. Obtain platform token (APNs on iOS, FCM on Android).
+2. Inside `registerTokenWithAdobe`, poll `Identity.getExperienceCloudId()` inline (bounded — currently 20 × 500ms = ~10s upper bound).
+3. On ECID resolved: call `MobileCore.setPushIdentifier(token)` **and** send a companion `buildPushRegistrationEvent` via `Edge.sendEvent()`. Both are required.
+4. On timeout: `console.error` and abort — no AsyncStorage state, no deferred-and-retried token. The next caller (warm start, manual button, APNs rotation) will re-attempt from scratch.
+
+Why both events in step 3:
+- `setPushIdentifier` populates the AJO Push Profile Dataset (OOTB Adobe-managed schema) — required for AJO message delivery.
+- `buildPushRegistrationEvent` writes to `davidMobileInteractions` with `_adobecmteas.identities.ecid` (the schema's primary identity descriptor). The OOTB `setPushIdentifier` payload omits the tenant block, so without this companion event the registration is invisible to tenant-scoped journey qualification and profile stitching.
+
+Do NOT reintroduce a deferred-token / retry pattern (`pendingPushToken`, `retryPendingPushToken`, `clearPendingToken`). The previous version of this pattern silently lost ~80% of prospect registrations because the retry triggered only at `configureAdobe()` completion and after login — neither was guaranteed to fire after ECID resolved.
 
 Mock tokens (`MockToken_*`, `AndroidMockToken_*`) must never be passed to `setPushIdentifier`.
 

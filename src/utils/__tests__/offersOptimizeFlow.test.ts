@@ -1,22 +1,15 @@
 import {
   buildOfferTrackingKey,
-  buildOptimizeRequestXdm,
-  createOptimizePropositionUpdateHandler,
-  getOffersForScope,
   isValidOfferImage,
-  mapOptimizePropositionToOffers,
-  trackOfferDisplay,
-  trackOfferTap,
+  mapPropositionsToOffers,
 } from '../offersOptimize';
 
-function createMockOffer(id: string, content: Record<string, any>) {
+function createMockItem(id: string, content: Record<string, any>) {
   return {
     id,
     data: {
       content: JSON.stringify(content),
     },
-    displayed: jest.fn(),
-    tapped: jest.fn(),
   };
 }
 
@@ -24,14 +17,15 @@ function createMockProposition(scope: string, items: any[]) {
   return {
     id: `prop-${scope}`,
     scope,
+    scopeDetails: { activity: { id: scope } },
     items,
   } as any;
 }
 
-describe('Offers Optimize flow contract', () => {
-  it('maps proposition items into consumer offers', () => {
-    const proposition = createMockProposition('scope-a', [
-      createMockOffer('offer-1', {
+describe('Offers proposition mapping (Messaging surface delivery)', () => {
+  it('flattens proposition items into consumer offers', () => {
+    const proposition = createMockProposition('edge-offers', [
+      createMockItem('offer-1', {
         name: 'Spring Promo',
         text: 'Discount text',
         image: 'https://example.com/img.png',
@@ -41,7 +35,7 @@ describe('Offers Optimize flow contract', () => {
       }),
     ]);
 
-    const offers = mapOptimizePropositionToOffers(proposition);
+    const offers = mapPropositionsToOffers([proposition], 'edge-offers');
 
     expect(offers).toHaveLength(1);
     expect(offers[0]).toMatchObject({
@@ -52,60 +46,56 @@ describe('Offers Optimize flow contract', () => {
       price: 19.99,
       category: 'promotions',
       sku: 'SPRING-1',
+      surface: 'edge-offers',
     });
   });
 
-  it('uses the latest decision scope inside the proposition update handler', () => {
-    const first = createMockProposition('scope-a', [
-      createMockOffer('offer-a', { title: 'Offer A' }),
-    ]);
-    const second = createMockProposition('scope-b', [
-      createMockOffer('offer-b', { title: 'Offer B' }),
-    ]);
-    const propositions = new Map<string, any>([
-      ['scope-a', first],
-      ['scope-b', second],
-    ]);
-    const scopeRef = { current: 'scope-a' };
-    const setOffers = jest.fn();
-    const handler = createOptimizePropositionUpdateHandler(scopeRef, setOffers);
+  it('flattens items across multiple propositions for the same surface', () => {
+    const propositions = [
+      createMockProposition('edge-offers', [
+        createMockItem('offer-a', { name: 'Offer A', price: 1 }),
+      ]),
+      createMockProposition('edge-offers', [
+        createMockItem('offer-b', { name: 'Offer B', price: 2 }),
+      ]),
+    ];
 
-    handler(propositions);
-    scopeRef.current = 'scope-b';
-    handler(propositions);
+    const offers = mapPropositionsToOffers(propositions, 'edge-offers');
 
-    expect(setOffers).toHaveBeenNthCalledWith(1, getOffersForScope(propositions, 'scope-a'));
-    expect(setOffers).toHaveBeenNthCalledWith(2, getOffersForScope(propositions, 'scope-b'));
+    expect(offers.map((o) => o.id)).toEqual(['offer-a', 'offer-b']);
+    expect(offers.every((o) => o.surface === 'edge-offers')).toBe(true);
   });
 
-  it('builds the expected Optimize request XDM payload', () => {
-    const xdm = buildOptimizeRequestXdm('mock-ecid-123');
-
-    expect(xdm.get('eventType')).toBe('personalization.request');
-    expect(xdm.get('identityMap')).toEqual({
-      ECID: [{ id: 'mock-ecid-123', primary: true }],
-    });
-  });
-
-  it('tracks display and tap against the underlying Optimize offer', () => {
-    const rawOffer = createMockOffer('offer-1', { title: 'Tracked Offer' });
-    const proposition = createMockProposition('scope-a', [rawOffer]);
-    const consumerOffer = mapOptimizePropositionToOffers(proposition)[0];
-
-    trackOfferDisplay(consumerOffer);
-    trackOfferTap(consumerOffer);
-
-    expect(rawOffer.displayed).toHaveBeenCalledWith(proposition);
-    expect(rawOffer.tapped).toHaveBeenCalledWith(proposition);
+  it('returns [] for missing or empty inputs', () => {
+    expect(mapPropositionsToOffers([], 'edge-offers')).toEqual([]);
+    expect(mapPropositionsToOffers(null, 'edge-offers')).toEqual([]);
+    expect(mapPropositionsToOffers(undefined, 'edge-offers')).toEqual([]);
   });
 
   it('treats empty image values as invalid and builds stable tracking keys', () => {
-    const proposition = createMockProposition('scope-a', [
-      createMockOffer('offer-1', { title: 'Offer A', image: '   ' }),
+    const proposition = createMockProposition('edge-offers', [
+      createMockItem('offer-1', { name: 'Offer A', image: '   ' }),
     ]);
-    const consumerOffer = mapOptimizePropositionToOffers(proposition)[0];
+    const consumerOffer = mapPropositionsToOffers([proposition], 'edge-offers')[0];
 
     expect(isValidOfferImage(consumerOffer.image)).toBe(false);
-    expect(buildOfferTrackingKey(consumerOffer)).toBe('prop-scope-a:offer-1');
+    expect(buildOfferTrackingKey(consumerOffer)).toBe('prop-edge-offers:offer-1');
+  });
+
+  it('falls back to proposition.uniqueId, then surface, when building tracking keys', () => {
+    const propositionWithUniqueId = {
+      uniqueId: 'unique-123',
+      scope: 'edge-offers',
+      items: [createMockItem('offer-1', { name: 'A' })],
+    };
+    const offers = mapPropositionsToOffers([propositionWithUniqueId], 'edge-offers');
+    expect(buildOfferTrackingKey(offers[0])).toBe('unique-123:offer-1');
+
+    const propositionWithNoIds = {
+      scope: 'edge-offers',
+      items: [createMockItem('offer-1', { name: 'A' })],
+    };
+    const offersNoIds = mapPropositionsToOffers([propositionWithNoIds], 'edge-offers');
+    expect(buildOfferTrackingKey(offersNoIds[0])).toBe('edge-offers:offer-1');
   });
 });

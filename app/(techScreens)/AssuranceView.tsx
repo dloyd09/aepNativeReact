@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Button, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Button, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Assurance } from '@adobe/react-native-aepassurance';
 import { MobileCore } from '@adobe/react-native-aepcore';
@@ -10,6 +11,7 @@ import { ThemedText } from '../../components/ThemedText';
 import { getStoredAppId } from '@/src/utils/adobeConfig';
 
 const ASSURANCE_URL_KEY = '@adobe_assurance_url';
+const APP_BASE_URL = 'com.AEPSampleAppNewArchEnabled://';
 
 const AssuranceView = () => {
   const [version, setVersion] = useState('');
@@ -82,6 +84,11 @@ const AssuranceView = () => {
     }
   };
 
+  const copyBaseURL = () => {
+    Clipboard.setString(APP_BASE_URL);
+    Alert.alert('Copied', `${APP_BASE_URL} copied to clipboard.`);
+  };
+
   const clearAssuranceSession = async () => {
     try {
       await AsyncStorage.removeItem(ASSURANCE_URL_KEY);
@@ -105,6 +112,18 @@ const AssuranceView = () => {
         <ThemedText style={styles.status}>Local Session Status: {isSessionActive ? 'Active' : 'Inactive'}</ThemedText>
         <ThemedText style={styles.status}>Adobe Service Status: {serviceStatus}</ThemedText>
 
+        <View style={styles.baseUrlRow}>
+          <ThemedText style={styles.baseUrlLabel}>App base URL:</ThemedText>
+          <ThemedText style={styles.baseUrlValue}>{APP_BASE_URL}</ThemedText>
+          <TouchableOpacity
+            onPress={copyBaseURL}
+            accessibilityLabel="Copy app base URL"
+            style={styles.copyButton}
+          >
+            <ThemedText style={styles.copyButtonText}>Copy</ThemedText>
+          </TouchableOpacity>
+        </View>
+
         <TextInput
           style={{
             height: 40,
@@ -115,7 +134,7 @@ const AssuranceView = () => {
             borderColor: theme.colors.border,
             borderWidth: 1,
           }}
-          placeholder="myapp://"
+          placeholder="com.AEPSampleAppNewArchEnabled://?adb_validation_sessionid=..."
           placeholderTextColor={theme.colors.text}
           value={sessionURL}
           onChangeText={setSessionURL}
@@ -152,6 +171,35 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginHorizontal: 16,
     marginBottom: 8,
+  },
+  baseUrlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 10,
+    marginTop: 12,
+    marginBottom: 4,
+    flexWrap: 'wrap',
+  },
+  baseUrlLabel: {
+    fontSize: 13,
+    marginRight: 6,
+  },
+  baseUrlValue: {
+    fontSize: 13,
+    fontFamily: 'monospace',
+    flex: 1,
+  },
+  copyButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    marginLeft: 8,
+  },
+  copyButtonText: {
+    fontSize: 12,
+    color: '#007AFF',
   },
 });
 

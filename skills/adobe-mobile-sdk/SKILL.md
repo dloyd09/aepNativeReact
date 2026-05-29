@@ -169,7 +169,8 @@ src/utils/
 - ❌ Do not hardcode the App ID — must come from `AsyncStorage` (user-configured at runtime)
 - ❌ Do not use `MobileCore.trackAction()` / `trackState()` — Analytics Classic; use `Edge.sendEvent()` with XDM builders
 - ❌ Do not construct raw XDM objects inline in screen files — always use builders from `xdmEventBuilders.ts`
-- ❌ Do not call `MobileCore.setPushIdentifier()` before confirming ECID is present
+- ❌ Do not call `MobileCore.setPushIdentifier()` before confirming ECID is present — `registerTokenWithAdobe` in `pushNotifications.ts` polls ECID inline (bounded, ~10s) before calling it. Do not reintroduce a deferred-token / `retryPendingPushToken` pattern; AsyncStorage state for pending tokens is forbidden.
+- ❌ Do not call `MobileCore.setPushIdentifier()` alone — it must be paired with `Edge.sendEvent(buildPushRegistrationEvent(...))` because the OOTB push profile payload omits the `_adobecmteas.identities.ecid` primary identity descriptor required by `davidMobileInteractions`.
 - ❌ Do not use ACP-prefixed packages — those are the previous SDK generation
 - ❌ Do not swallow SDK errors silently — surface them in the Technical View log
 
@@ -204,7 +205,7 @@ Detailed per-extension guides live in `skills/adobe-mobile-sdk/references/`:
 | `edge-consent.md` | Consent for Edge Network — opt-in/out management |
 | `edge-bridge.md` | Edge Bridge — Analytics migration compatibility layer |
 | `edge-adobe-journey-optimizer.md` | Adobe Journey Optimizer — IAM and push |
-| `edge-optimize.md` | Offer Decisioning and Target — propositions via Edge |
+| `edge-optimize.md` | Proposition delivery — Messaging surfaces (current) vs Optimize scopes (legacy). Read before adding any `updatePropositions*` call. |
 
 ### Solution Extensions
 | File | Extension |

@@ -13,11 +13,12 @@ governing permissions and limitations under the License.
 import React, { useState, useEffect } from 'react';
 import { Button, ScrollView, Alert, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
 import { useRouter } from 'expo-router';
 import { TechnicalScreen } from '../../components/TechnicalScreen';
 import { ThemedText } from '../../components/ThemedText';
 import { useTheme } from '@react-navigation/native';
-import { pushNotificationService } from '../../src/utils/pushNotifications';
+import { pushNotificationService, isMockToken } from '../../src/utils/pushNotifications';
 import styles from '../../styles/styles';
 
 const TEST_PUSH_PAYLOAD = {
@@ -25,6 +26,11 @@ const TEST_PUSH_PAYLOAD = {
   adb_body: 'Local notification triggered from the technical push screen.',
   adb_uri: 'myapp://(consumerTabs)/profile',
   source: 'technical-push-test',
+  // Origin marker read by the tap handler in app/_layout.tsx. A local-test push
+  // intentionally carries NO real _xdm, so the handler walls it off from Edge:
+  // it deep-links and logs, but never sends a pushTracking event to Adobe.
+  // (`source` is kept for backward compatibility; `_origin` is the standardized seam.)
+  _origin: 'local-test',
   templateData: {
     firstName: 'Test User',
     campaign: 'local-push-validation',
@@ -75,8 +81,16 @@ function PushNotificationView() {
         setLog(prev => prev + '\nSuccessfully registered for push notifications and triggered Adobe auto-sync');
         Alert.alert('Success', 'Registered for push notifications. Adobe token sync runs automatically.');
       } else {
-        setLog(prev => prev + '\nFailed to register for push notifications');
-        Alert.alert('Error', 'Failed to register for push notifications');
+        // No token is returned on a simulator/emulator, when notification
+        // permission is denied, or when FCM is unavailable. The app no longer
+        // fabricates a placeholder — surface the real reason instead of implying success.
+        const reason = !Device.isDevice
+          ? 'Push notifications require a physical device — not available on a simulator/emulator.'
+          : permissions.status !== 'granted'
+            ? 'Notification permission was not granted. Enable notifications in system settings and try again.'
+            : 'Could not obtain a push token. On Android, confirm the build includes Firebase (not Expo Go).';
+        setLog(prev => prev + '\nPush unavailable: ' + reason);
+        Alert.alert('Push Unavailable', reason);
       }
     } catch (error) {
       console.error('Error registering for notifications:', error);
@@ -178,8 +192,8 @@ function PushNotificationView() {
           <ThemedText style={{ marginTop: 16, color: theme.colors.text, fontSize: 14, textAlign: 'center' }}>
             {Platform.OS === 'ios' ? 'APNs Device Token' : 'FCM Token'}: {pushToken.substring(0, 20)}...
             {Platform.OS === 'android' && (
-              <ThemedText style={{ color: pushToken.startsWith('Mock') ? '#ff6b6b' : '#51cf66', fontSize: 12 }}>
-                {'\n'}({pushToken.startsWith('Mock') ? 'Mock Token' : 'Real FCM Token'})
+              <ThemedText style={{ color: isMockToken(pushToken) ? '#ff6b6b' : '#51cf66', fontSize: 12 }}>
+                {'\n'}({isMockToken(pushToken) ? 'Mock Token' : 'Real FCM Token'})
               </ThemedText>
             )}
           </ThemedText>

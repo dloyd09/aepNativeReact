@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Native projects (rarely need direct reads; use AGENTS.md gotchas for build issues)
+android/
+ios/
+
+# Expo / build artifacts
+.expo/
+.expo-shared/
+dist/
+web-build/
+
+# Cursor agent skills (not app code)
+.cursor/
+
+# Logs and generated
+*.log
+expo-env.d.ts
